@@ -35,7 +35,7 @@ void display_chat(const char *channel, const char *room) {
         return;
     }
 
-    printf("\n--------------------- Chat %s/%s ---------------------\n", channel, room);
+    printf("\n------------------- Chat %s/%s -------------------\n", channel, room);
     char line[BUF_SIZE];
     char response[BUF_SIZE * 10] = "";
     while (fgets(line, sizeof(line), file)) {
