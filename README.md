@@ -238,5 +238,80 @@ fgets(buffer, BUF_SIZE, stdin);
 _Loop_ utama yang menangani _input_ pengguna serta interaksi dengan **server.c**. Prosesnya adalah membaca _input_ pengguna > mengirimkannya ke _server_ > memprosesnya. Terdapat beberapa respons seperti _username_, nama _channel_ atau _room_, pesan baru, pesan yang diubah atau yang telah dihapus.
 
 ## monitor.c
+berfungsi sebagai klien chat yang dapat menghubungkan diri ke server, login dengan menggunakan username dan password, dan memantau percakapan dalam chat room tertentu
+### Definisi Konstanta dan Struktur
+````
+#define PORT 8080
+#define BUF_SIZE 1024
+#define DISCORIT_DIR "/home/ax3lrod/sisop/fp/DiscorIT"
+
+typedef struct {
+    char channel[BUF_SIZE];
+    char room[BUF_SIZE];
+    int sock;
+} ChatMonitorArgs;
+
+````
+PORT adalah port yang digunakan untuk koneksi ke server.
+BUF_SIZE adalah ukuran buffer yang digunakan untuk berbagai operasi string.
+DISCORIT_DIR adalah direktori tempat file chat disimpan.
+ChatMonitorArgs adalah struktur yang digunakan untuk menyimpan argumen yang dilewatkan ke thread pemantauan chat.
+
+
+### Fungsi 'display-chat'
+````
+void display_chat(const char *channel, const char *room) {
+    // ...
+}
+
+````
+Fungsi ini membaca file chat CSV untuk channel dan room tertentu, kemudian menampilkan isinya ke layar.
+
+### Fungsi 'monitor_chat'
+````
+void *monitor_chat(void *arg) {
+    // ...
+}
+````
+Fungsi ini dijalankan dalam thread terpisah untuk memantau perubahan file chat. Jika file chat berubah (diperbarui), fungsi ini akan memanggil display_chat untuk menampilkan isi chat yang terbaru.
+
+### Fungsi 'handle_commands"
+````
+void handle_commands(int sock, const char *username) {
+    // ...
+}
+````
+Fungsi ini menangani perintah yang diterima dari server. Termasuk memulai thread pemantauan chat jika channel dan room berubah, dan menampilkan pesan dari server.
+
+### Fungsi 'main"
+````
+int main(int argc, char *argv[]) {
+    // ...
+}
+````
+Fungsi ini adalah titik masuk program.
+Memeriksa argumen program untuk login (LOGIN username -p password).
+Menginisialisasi socket dan menghubungkan ke server.
+Mengirim perintah login ke server dan membaca responsnya.
+Jika login berhasil, fungsi handle_commands dipanggil untuk menangani interaksi lebih lanjut dengan server.
+
+### Alur Program Utama:
+
+Program memeriksa argumen command line untuk login.
+Membuat socket dan menghubungkan ke server.
+Mengirimkan perintah login ke server dan menunggu respons.
+Jika login berhasil, program menunggu perintah dari server, termasuk perintah untuk mengganti channel dan room, serta perintah untuk keluar.
+Jika channel dan room baru diterima, program memulai thread untuk memantau perubahan pada file chat dan menampilkan isi chat.
+
+### Pemantauan dan Tampilan Chat:
+
+Thread pemantauan (dijalankan oleh monitor_chat) akan terus memeriksa perubahan pada file chat setiap detik.
+Jika ada perubahan, isi chat akan dibaca ulang dan ditampilkan ke layar dengan fungsi display_chat.
+
+### Penghentian Program:
+
+Jika perintah EXIT diterima dari server, atau jika thread pemantauan diakhiri, program akan keluar dari loop dan menutup socket sebelum berhenti.
+
+Secara keseluruhan, kode ini berfungsi sebagai client untuk memonitor dan menampilkan pesan chat dari server dalam format yang terstruktur menggunakan thread untuk pemantauan file chat yang berubah.
 
 ## server.c
