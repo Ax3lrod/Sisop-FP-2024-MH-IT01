@@ -761,8 +761,8 @@ bool my_message(int socket, const char *channel_name, const char *room_name, con
     char line[BUF_SIZE];
     while (fgets(line, sizeof(line), chat_file)) {
         int id;
-        char sender[BUF_SIZE], message[BUF_SIZE];
-        sscanf(line, "%d,%[^,],%[^\n]", &id, sender, message);
+        char sender[BUF_SIZE], message[BUF_SIZE], timestamp[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%[^,],%[^\n]", &id, timestamp, sender, message);
         if (id == id_chat && strcmp(sender, username) == 0) {
             fclose(chat_file);
             return 1;
