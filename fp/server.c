@@ -947,27 +947,29 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
         }else{
             write(socket, "Akses ditolak", strlen("Akses ditolak"));
         }
-    } else if (sscanf(buffer, "REMOVE %s", username)){
-        if(session->in_channel){
-            if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
-                if(is_member(socket, session->current_channel, username)){
+    } else if (sscanf(buffer, "REMOVE USER %s", username) == 1) {
+        if (session->in_channel) {
+            if (is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)) {
+                if (is_member(socket, session->current_channel, username)) {
                     kick_user(socket, session->current_channel, username);
-                }else{
+                } else {
                     write(socket, "User tidak ditemukan", strlen("User tidak ditemukan"));
                 }
-            }else{
+            } else {
                 write(socket, "Akses ditolak", strlen("Akses ditolak"));
             }
         } else {
-            if(is_root(socket, session->username)){
-                if(is_root(socket, username)){
-                    write(socket, "Tidak bisa hapus root", strlen("Tidak bisa hapus root"));
-                }else{
-                    remove_user(socket, username);
-                }
-            }else{
-                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            write(socket, "Anda tidak berada dalam channel", strlen("Anda tidak berada dalam channel"));
+        }
+    } else if (sscanf(buffer, "REMOVE %s", username) == 1) {
+        if (is_root(socket, session->username)) {
+            if (is_root(socket, username)) {
+                write(socket, "Tidak bisa hapus root", strlen("Tidak bisa hapus root"));
+            } else {
+                remove_user(socket, username);
             }
+        } else {
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
         }
     } else if (sscanf(buffer, "BAN %s", target_username) == 1){
         if(session->in_channel){
