@@ -66,6 +66,7 @@ void list_channels(int socket);
 void create_channel(int socket, const char *username, int id, const char *channel_name, const char *key);
 void edit_channel(int socket, const char *username, const char *channel_name, const char *new_channel_name);
 void delete_channel(int socket, const char *channel_name);
+void kick_user(int socket, const char *channel_name, const char *username);
 void join_channel(int socket, const char *username, const char *channel, int id,const char *key);
 void create_room(int socket, const char *username, const char *channel, const char *room);
 void join_room(int socket, const char *username, const char *channel, const char *room);
@@ -947,14 +948,26 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             write(socket, "Akses ditolak", strlen("Akses ditolak"));
         }
     } else if (sscanf(buffer, "REMOVE %s", username)){
-        if(is_root(socket, session->username)){
-            if(is_root(socket, username)){
-                write(socket, "Tidak bisa hapus root", strlen("Tidak bisa hapus root"));
+        if(session->in_channel){
+            if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                if(is_member(socket, session->current_channel, username)){
+                    kick_user(socket, session->current_channel, username);
+                }else{
+                    write(socket, "User tidak ditemukan", strlen("User tidak ditemukan"));
+                }
             }else{
-                remove_user(socket, username);
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
             }
-        }else{
-            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        } else {
+            if(is_root(socket, session->username)){
+                if(is_root(socket, username)){
+                    write(socket, "Tidak bisa hapus root", strlen("Tidak bisa hapus root"));
+                }else{
+                    remove_user(socket, username);
+                }
+            }else{
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
         }
     } else if (sscanf(buffer, "BAN %s", target_username) == 1){
         if(session->in_channel){
@@ -1731,6 +1744,50 @@ void join_channel(int socket, const char *username, const char *channel, int id,
         //write(socket, channel_msg, strlen(channel_msg));
         //write(socket, channel, strlen(channel));
     }
+}
+
+void kick_user(int socket, const char *channel, const char *username) {
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    FILE *temp = fopen("temp.csv", "w");
+
+    if (!auth_file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0) {
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(auth_file);
+    fclose(temp);
+
+    if (found) {
+        remove(auth_dir_path);
+        rename("temp.csv", auth_dir_path);
+        snprintf(line, sizeof(line), "User %s berhasil dikeluarkan dari channel %s", username, channel);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+
+    char log_message[BUF_SIZE];
+    snprintf(log_message, sizeof(log_message), "User %s dikeluarkan dari channel", username);
+    log_action(channel, log_message);
 }
 
 void list_channels(int socket) {
