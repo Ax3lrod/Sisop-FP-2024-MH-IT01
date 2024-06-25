@@ -6,7 +6,7 @@
 2. Diandra Naufal Abror 5027231004
 3. Muhamad Rizq Taufan 5027231021
 
-## discorIT.c
+## discorit.c
 ### 1. _Header_ dan Deklarasi
 ```
 #include <stdio.h>
