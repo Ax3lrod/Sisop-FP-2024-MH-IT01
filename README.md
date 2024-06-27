@@ -595,4 +595,125 @@ return r;
 - if (!r) r = rmdir(path);: Jika semua entri berhasil dihapus (r adalah 0), hapus direktori itu sendiri.
 - return r;: Mengembalikan nilai r yang menunjukkan keberhasilan (0) atau kegagalan (nilai negatif) operasi penghapusan direktori.
 
-###
+### 4. Fungsi get_timestamp
+````
+void get_timestamp(char *buffer, size_t buffer_size) {
+    time_t now = time(NULL);
+    struct tm *t = localtime(&now);
+    strftime(buffer, buffer_size, "[%d/%m/%Y %H:%M:%S]", t);
+}
+````
+Fungsi ini menghasilkan timestamp dalam format [dd/mm/yyyy hh:mm:ss] dan menyimpannya di buffer yang diberikan.
+
+time_t now = time(NULL);: Mendapatkan waktu saat ini.
+struct tm *t = localtime(&now);: Mengonversi waktu ke format lokal.
+strftime(buffer, buffer_size, "[%d/%m/%Y %H:%M:%S]", t);: Memformat waktu dan menyimpannya dalam buffer.
+
+### 5. Fungsi log_action
+````
+void log_action(const char *channel_name, const char *event) {
+    char log_file_path[BUF_SIZE];
+    snprintf(log_file_path, sizeof(log_file_path), "%s/%s/admin/user.log", DISCORIT_DIR, channel_name);
+    FILE *log_file = fopen(log_file_path, "a");
+    if (!log_file) {
+        perror("fopen");
+        return;
+    }
+
+    char timestamp[BUF_SIZE];
+    get_timestamp(timestamp, sizeof(timestamp));
+
+    fprintf(log_file, "%s %s\n", timestamp, event);
+    fclose(log_file);
+}
+````
+Fungsi ini mencatat sebuah aksi ke file log (user.log) yang terletak di dalam folder admin pada direktori saluran tertentu.
+
+char log_file_path[BUF_SIZE];: Buffer untuk path file log.
+snprintf(log_file_path, sizeof(log_file_path), "%s/%s/admin/user.log", DISCORIT_DIR, channel_name);: Menggabungkan direktori dan nama saluran untuk membuat path lengkap ke file log.
+FILE *log_file = fopen(log_file_path, "a");: Membuka file log dalam mode append. Jika gagal, menampilkan pesan error dan keluar dari fungsi.
+char timestamp[BUF_SIZE];: Buffer untuk menyimpan timestamp.
+get_timestamp(timestamp, sizeof(timestamp));: Mendapatkan timestamp saat ini.
+fprintf(log_file, "%s %s\n", timestamp, event);: Menulis timestamp dan event ke file log.
+fclose(log_file);: Menutup file log.
+
+### 6. Fungsi daemonize
+````
+void daemonize() {
+    pid_t pid;
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("Fork failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    if (setsid() < 0) {
+        perror("setsid failed");
+        exit(EXIT_FAILURE);
+    }
+
+    signal(SIGCHLD, SIG_IGN);
+
+    pid = fork();
+
+    if (pid < 0) {
+        perror("Fork failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if (pid > 0) {
+        exit(EXIT_SUCCESS);
+    }
+
+    umask(0);
+
+    if (chdir("/") < 0) {
+        perror("chdir failed");
+        exit(EXIT_FAILURE);
+    }
+
+    open("/dev/null", O_RDWR);
+    dup(0);
+    dup(0);
+}
+````
+Fungsi ini mengubah proses yang sedang berjalan menjadi daemon, yaitu sebuah proses yang berjalan di latar belakang tanpa kontrol terminal.
+
+Fork the Parent Process:
+pid = fork();: Membuat proses anak.
+Jika fork gagal (pid < 0), menampilkan pesan error dan keluar.
+Jika pid > 0, ini adalah proses induk yang keluar dengan status sukses.
+
+Set Session Leader:
+if (setsid() < 0): Proses anak menjadi pemimpin sesi baru.
+Jika setsid gagal, menampilkan pesan error dan keluar.
+
+Ignore SIGCHLD:
+signal(SIGCHLD, SIG_IGN);: Mengabaikan sinyal dari proses anak yang berakhir.
+
+Fork Again:
+pid = fork();: Membuat proses anak kedua.
+Jika fork gagal, menampilkan pesan error dan keluar.
+Jika pid > 0, proses induk kedua keluar dengan status sukses.
+
+Set File Permissions:
+umask(0);: Mengatur mode file mask untuk memastikan file yang dibuat memiliki izin yang tepat.
+
+Change Working Directory:
+if (chdir("/") < 0): Mengubah direktori kerja ke root untuk memastikan proses daemon tidak mengunci direktori yang sedang berjalan.
+Jika chdir gagal, menampilkan pesan error dan keluar.
+
+Close File Descriptors:
+open("/dev/null", O_RDWR);: Membuka /dev/null untuk input/output standar.
+dup(0);: Menyalin file descriptor stdin ke stdout.
+dup(0);: Menyalin file descriptor stdin ke stderr.
+
+Fungsi ini memastikan bahwa daemon tidak terkait dengan terminal dan dapat berjalan di latar belakang tanpa interaksi langsung dari pengguna.
+
+### 7. Fungsi main
