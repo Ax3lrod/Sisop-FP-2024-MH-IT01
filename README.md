@@ -315,7 +315,7 @@ Jika perintah EXIT diterima dari server, atau jika thread pemantauan diakhiri, p
 Secara keseluruhan, kode ini berfungsi sebagai client untuk memonitor dan menampilkan pesan chat dari server dalam format yang terstruktur menggunakan thread untuk pemantauan file chat yang berubah.
 
 ## server.c
-### Header dan Deklarasi
+### 1. Header dan Deklarasi
 ````
 #include <stdio.h>
 #include <stdlib.h>
@@ -393,7 +393,7 @@ int client_count = 0;
 - bcrypt(const char *password): Fungsi untuk mengenkripsi kata sandi menggunakan bcrypt.
 - Fungsi lain untuk mengelola saluran, ruangan, dan pengguna, serta untuk mengirim dan mengedit pesan.
 
-### Deskripsi Fungsi
+### 2. Deskripsi Fungsi
 ````
 void *handle_client(void *arg);
 char *bcrypt(const char *password);
@@ -462,3 +462,137 @@ Chat Management:
 - edit_chat: Mengedit pesan yang sudah dikirim.
 - delete_chat: Menghapus pesan yang sudah dikirim.
 - see_chat: Melihat pesan dalam ruangan tertentu.
+
+### 3. Fungsi remove_directory
+````
+int remove_directory(const char *path) {
+    DIR *d = opendir(path);
+    size_t path_len = strlen(path);
+    int r = -1;
+
+    if (d) {
+        struct dirent *p;
+        r = 0;
+        while (!r && (p = readdir(d))) {
+            int r2 = -1;
+            char *buf;
+            size_t len;
+
+            // Skip the names "." and ".." as we don't want to recurse on them
+            if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+                continue;
+
+            len = path_len + strlen(p->d_name) + 2;
+            buf = malloc(len);
+
+            if (buf) {
+                struct stat statbuf;
+                snprintf(buf, len, "%s/%s", path, p->d_name);
+
+                if (!stat(buf, &statbuf)) {
+                    if (S_ISDIR(statbuf.st_mode))
+                        r2 = remove_directory(buf);
+                    else
+                        r2 = unlink(buf);
+                }
+                free(buf);
+            }
+            r = r2;
+        }
+        closedir(d);
+    }
+
+    if (!r)
+        r = rmdir(path);
+
+    return r;
+}
+````
+fungsi remove_directory yang bertujuan untuk menghapus direktori beserta isinya, termasuk subdirektori dan file yang ada di dalamnya. Fungsi ini secara rekursif menghapus semua file dan subdirektori sebelum akhirnya menghapus direktori itu sendiri. 
+
+#### Deklarasi dan inisialisasi
+````
+int remove_directory(const char *path) {
+    DIR *d = opendir(path);
+    size_t path_len = strlen(path);
+    int r = -1;
+````
+DIR *d = opendir(path);: Membuka direktori yang path-nya diberikan sebagai argumen dan mengembalikan pointer ke struktur direktori.
+size_t path_len = strlen(path);: Menghitung panjang string dari path direktori.
+int r = -1;: Inisialisasi variabel r dengan nilai -1, yang menunjukkan kegagalan operasi jika tidak berubah.
+
+#### Pemeriksaan Direktori
+````
+if (d) {
+    struct dirent *p;
+    r = 0;
+
+````
+Jika direktori berhasil dibuka (d tidak NULL), inisialisasi variabel p dari tipe struct dirent dan set r ke 0, yang menandakan keberhasilan.
+
+#### Pembacaan Direktori
+````
+    while (!r && (p = readdir(d))) {
+        int r2 = -1;
+        char *buf;
+        size_t len;
+
+````
+while (!r && (p = readdir(d))): Iterasi melalui setiap entri dalam direktori selama r tetap 0 dan masih ada entri yang bisa dibaca.
+int r2 = -1;: Inisialisasi variabel r2 dengan -1 untuk memeriksa hasil penghapusan entri.
+char *buf;: Pointer untuk menyimpan path lengkap dari entri yang sedang diproses.
+size_t len;: Menyimpan panjang dari path lengkap.
+
+#### Melewati Entri Khusus
+````
+        if (!strcmp(p->d_name, ".") || !strcmp(p->d_name, ".."))
+            continue;
+
+````
+Memeriksa dan melewati entri khusus "." dan ".." yang merepresentasikan direktori saat ini dan direktori induk.
+
+#### Penggabungan Path dan Penghapusan
+````
+len = path_len + strlen(p->d_name) + 2;
+        buf = malloc(len);
+
+        if (buf) {
+            struct stat statbuf;
+            snprintf(buf, len, "%s/%s", path, p->d_name);
+
+            if (!stat(buf, &statbuf)) {
+                if (S_ISDIR(statbuf.st_mode))
+                    r2 = remove_directory(buf);
+                else
+                    r2 = unlink(buf);
+            }
+            free(buf);
+        }
+        r = r2;
+    }
+    closedir(d);
+````
+len = path_len + strlen(p->d_name) + 2;: Menghitung panjang buffer yang diperlukan untuk path lengkap.
+buf = malloc(len);: Mengalokasikan memori untuk buffer.
+snprintf(buf, len, "%s/%s", path, p->d_name);: Menggabungkan path direktori dengan nama entri untuk membentuk path lengkap.
+stat(buf, &statbuf): Mendapatkan informasi status dari entri.
+if (S_ISDIR(statbuf.st_mode)): Jika entri adalah direktori, panggil remove_directory secara rekursif.
+else unlink(buf);: Jika entri adalah file, hapus file tersebut.
+free(buf);: Membebaskan memori yang dialokasikan untuk buffer.
+r = r2;: Set nilai r ke hasil dari operasi penghapusan entri.
+
+#### Menutup Direktori dan Menghapus Direktori
+````
+    closedir(d);
+}
+
+if (!r)
+    r = rmdir(path);
+
+return r;
+````
+- closedir(d);: Menutup direktori setelah selesai diproses.
+- if (!r) r = rmdir(path);: Jika semua entri berhasil dihapus (r adalah 0), hapus direktori itu sendiri.
+- return r;: Mengembalikan nilai r yang menunjukkan keberhasilan (0) atau kegagalan (nilai negatif) operasi penghapusan direktori.
+
+###
