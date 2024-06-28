@@ -1491,7 +1491,7 @@ Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (i
 Jika stored_username cocok dengan username dan role adalah "BANNED", menutup file dan mengembalikan true.
 Jika tidak ditemukan, menutup file dan mengembalikan false.
 
-### Fungsi `bool username_taken`
+### 26. Fungsi `bool username_taken`
 ````
 bool username_taken(int socket, const char *username) {
     FILE *file = fopen(USER_FILE, "r");
@@ -2025,3 +2025,1201 @@ CHAT, EDIT, DELETE, SEE
     }
 }
 ````
+
+### 29. Fungsi `bcrypt`
+```
+har *bcrypt(const char *password) {
+    char salt[] = "$2b$12$XXXXXXXXXXXXXXXXXXXXXX"; // Generate a random salt
+    char *encrypted_password = crypt(password, salt);
+    return strdup(encrypted_password);
+}
+```
+Fungsi tersebut mengenkripsi _password_ menggunakan algoritma "bcrypt". Pertama-tama, fungsi akan membuat "salt" yang statis kemudian menggunakan `crypt()` untuk mengenkripsi _password_. Terakhir, fungsi mengembalikan salinan dari password yang telah dienkripsi.
+
+### 30. Fungsi `list users`
+```
+void list_users(int socket) {
+    FILE *file = fopen(USER_FILE, "r");
+    char line[BUF_SIZE];
+    char response[BUF_SIZE] = "Users: ";
+    if (!file) {
+        perror("fopen");
+        return;
+    }
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char username[BUF_SIZE];
+        sscanf(line, "%d,%[^,]", &id, username);
+        char user_info[BUF_SIZE];
+        snprintf(user_info, sizeof(user_info), "[%d]%s ", id, username);
+        strcat(response, user_info);
+    }
+    fclose(file);
+    write(socket, response, strlen(response));
+}
+```
+Membaca file .csv dari pengguna setiap barisnya dan mengekstrak ID beserta namanya, lalu informasi tersebut dikumpulkan _string_ `response` yang pada akhirnya akan dikembalikan melalui socket.
+
+### 31. Fungsi `list_channel_users`
+```
+void list_channel_users(int socket, const char *channel_name) {
+    char auth_file_path[BUF_SIZE];
+    snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel_name);
+
+    FILE *auth_file = fopen(auth_file_path, "r");
+    if (!auth_file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    char response[BUF_SIZE] = "Users: ";
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, username, role);
+        char user_info[BUF_SIZE];
+        snprintf(user_info, sizeof(user_info), "%s ", username);
+        strcat(response, user_info);
+    }
+    fclose(auth_file);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini membaca file otentikasi _channel_ dan mengirimkan daftar pengguna _channel_ ke klien. Fungsi membuka file otentikasi channel, membaca setiap baris, dan mengekstrak nama pengguna. Lalu nama pengguna dikumpulkan dalam _string_ `response`. Akhirnya, respons dikirim kembali ke klien melalui _socket_.
+
+### 32. Fungsi `update_channel_auth_files`
+```
+void update_channel_auth_files(const char *old_username, const char *new_username) {
+    DIR *dir = opendir(DISCORIT_DIR);
+    if (!dir) {
+        perror("opendir");
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir))) {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            char auth_file_path[BUF_SIZE];
+            snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, entry->d_name);
+
+            FILE *auth_file = fopen(auth_file_path, "r");
+            FILE *temp_file = fopen("temp_auth.csv", "w");
+
+            if (!auth_file || !temp_file) {
+                perror("Unable to open auth file or create temp file");
+                if (auth_file) fclose(auth_file);
+                if (temp_file) fclose(temp_file);
+                continue;
+            }
+
+            char line[BUF_SIZE];
+            while (fgets(line, sizeof(line), auth_file)) {
+                int id;
+                char username[BUF_SIZE], role[BUF_SIZE];
+                sscanf(line, "%d,%[^,],%s", &id, username, role);
+                if (strcmp(username, old_username) == 0) {
+                    fprintf(temp_file, "%d,%s,%s\n", id, new_username, role);
+                } else {
+                    fputs(line, temp_file);
+                }
+            }
+
+            fclose(auth_file);
+            fclose(temp_file);
+
+            remove(auth_file_path);
+            rename("temp_auth.csv", auth_file_path);
+
+            char log_message[BUF_SIZE];
+            snprintf(log_message, sizeof(log_message), "Nama user %s berubah menjadi %s", old_username, new_username);
+            log_action(entry->d_name, log_message);
+        }
+    }
+}
+```
+Fungsi ini memperbarui file otentikasi di semua _channel_ ketika nama pengguna diubah. Fungsi menelusuri semua direktori _channel_, membuka file otentikasi, dan memperbarui nama pengguna yang sesuai. Perubahan disimpan ke file sementara, kemudian file asli diganti dengan file sementara. Fungsi juga mencatat perubahan dalam file log _channel_.
+
+### 33. Fungsi `edit_user_name`
+```
+void edit_user_name(int socket, const char *username, const char *new_username) {
+    FILE *file = fopen(USER_FILE, "r");
+    FILE *temp = fopen("temp.csv", "w");
+    if (!file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], password[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, password, role);
+        if (strcmp(stored_username, username) == 0) {
+            fprintf(temp, "%d,%s,%s,%s\n", id, new_username, password, role);
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    char new_name[BUF_SIZE];
+
+    if (found) {
+        remove(USER_FILE);
+        rename("temp.csv", USER_FILE);
+        snprintf(line, sizeof(line), "%s berhasil diubah menjadi %s", username, new_username);
+        //snprintf(new_name, sizeof(new_name), "%s", new_username);
+
+        update_channel_auth_files(username, new_username);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+}
+```
+Mengubah nama pengguna dalam file pengguna. Fungsi membaca file pengguna > Mencari pengguna yang sesuai > memperbarui namanya. Perubahan disimpan ke file sementara, kemudian file asli diganti dengan file sementara. Fungsi juga memperbarui file otentikasi _channel_ dan mengirim konfirmasi ke klien.
+
+### 34. Fungsi `edit_user_name_other`
+```
+void edit_user_name_other(int socket, const char *username, const const char *new_username) {
+    FILE *file = fopen(USER_FILE, "r");
+    FILE *temp = fopen("temp.csv", "w");
+    if (!file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], stored_password[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, stored_password, role);
+        if (strcmp(stored_username, username) == 0) {
+            fprintf(temp, "%d,%s,%s,%s\n", id, new_username, stored_password, role);
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    if (found) {
+        remove(USER_FILE);
+        rename("temp.csv", USER_FILE);
+        snprintf(line, sizeof(line), "Root merubah nama user %s menjadi %s", username, new_username);
+        update_channel_auth_files(username, new_username);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+}
+```
+Mirip dengan edit_user_name, tetapi digunakan oleh pengguna _root_ untuk mengubah nama pengguna lain. Fungsi membaca file pengguna, mencari pengguna yang sesuai, dan memperbarui namanya. Perubahan disimpan dan file otentikasi channel diperbarui. Fungsi mengirim konfirmasi ke klien.
+
+### 35. Fungsi `edit_user_password`
+```
+    void edit_user_password(int socket, const char *username, const char *new_password) {
+    FILE *file = fopen(USER_FILE, "r");
+    FILE *temp = fopen("temp.csv", "w");
+    if (!file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], stored_password[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, stored_password, role);
+        if (strcmp(stored_username, username) == 0) {
+            char *encrypted_password = bcrypt(new_password);
+            fprintf(temp, "%d,%s,%s,%s\n", id, stored_username, encrypted_password, role);
+            free(encrypted_password);
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    if (found) {
+        remove(USER_FILE);
+        rename("temp.csv", USER_FILE);
+        snprintf(line, sizeof(line), "password user %s berhasil diubah", username);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+}
+```
+_Logic_ mirip `edit_user_name` namun untuk mengubah _password_ pengguna.
+
+### 36. Fungsi `remove_user_from_channel_auth`
+```
+void remove_user_from_channel_auth(const char *username) {
+    DIR *dir = opendir(DISCORIT_DIR);
+    if (!dir) {
+        perror("opendir");
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir))) {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            char auth_file_path[BUF_SIZE];
+            snprintf(auth_file_path, sizeof(auth_file_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, entry->d_name);
+
+            FILE *auth_file = fopen(auth_file_path, "r");
+            FILE *temp_file = fopen("temp_auth.csv", "w");
+
+            if (!auth_file || !temp_file) {
+                perror("Unable to open auth file or create temp file");
+                if (auth_file) fclose(auth_file);
+                if (temp_file) fclose(temp_file);
+                continue;
+            }
+
+            char line[BUF_SIZE];
+            while (fgets(line, sizeof(line), auth_file)) {
+                int id;
+                char stored_username[BUF_SIZE], role[BUF_SIZE];
+                sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+                if (strcmp(stored_username, username) != 0) {
+                    fputs(line, temp_file);
+                }
+            }
+
+            fclose(auth_file);
+            fclose(temp_file);
+
+            remove(auth_file_path);
+            rename("temp_auth.csv", auth_file_path);
+
+            char log_message[BUF_SIZE];
+            snprintf(log_message, sizeof(log_message), "Root menghapus user %s dari channel", username);
+            log_action(entry->d_name, log_message);
+        }
+    }
+}
+```
+Akan menghapus pengguna dari file otentikasi semua _channel_. Fungsi menelusuri semua direktori channel, membuka file otentikasi, dan menghapus entri pengguna yang sesuai. Perubahan disimpan dan dicatat dalam file log channel.
+
+### 37. Fungsi `remove_user`
+```
+void remove_user(int socket, const char *username) {
+    FILE *file = fopen(USER_FILE, "r");
+    FILE *temp = fopen("temp.csv", "w");
+    if (!file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], stored_password[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, stored_password, role);
+        if (strcmp(stored_username, username) == 0) {
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    if (found) {
+        remove(USER_FILE);
+        rename("temp.csv", USER_FILE);
+        snprintf(line, sizeof(line), "User %s berhasil dihapus", username);
+        remove_user_from_channel_auth(username);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+}
+```
+Fungsi ini menghapus pengguna dari file pengguna dan semua file otentikasi channel. Fungsi membaca file pengguna, menghapus entri pengguna yang sesuai, dan menyimpan perubahan. Fungsi juga memanggil `remove_user_from_channel_auth` untuk menghapus pengguna dari semua _channel_. Konfirmasi dikirim ke klien.
+
+### 38. Fungsi `ban_user`
+```
+void ban_user(int socket, const char *channel, const char *username) {
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    FILE *temp = fopen("temp.csv", "w");
+
+    if (!auth_file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0) {
+            fprintf(temp, "%d,%s,BANNED\n", id, stored_username);
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(auth_file);
+    fclose(temp);
+
+    if (found) {
+        remove(auth_dir_path);
+        rename("temp.csv", auth_dir_path);
+        snprintf(line, sizeof(line), "User %s dibanned dari channel %s", username, channel);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+
+    char log_message[BUF_SIZE];
+    snprintf(log_message, sizeof(log_message), "User %s dibanned", username);
+    log_action(channel, log_message);
+}
+```
+Fungsi ini mem-_ban_ pengguna dari _channel_ tertentu. Fungsi membaca file otentikasi channel, mencari pengguna yang sesuai, dan mengubah perannya menjadi "BANNED". Perubahan disimpan dan dicatat dalam file log channel. Konfirmasi dikirim ke klien.
+
+### 39. Fungsi `unban_user`
+```
+void unban_user(int socket, const char *channel, const char *username) {
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    FILE *temp = fopen("temp.csv", "w");
+
+    if (!auth_file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0) {
+            fprintf(temp, "%d,%s,USER\n", id, stored_username);
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(auth_file);
+    fclose(temp);
+
+    if (found) {
+        remove(auth_dir_path);
+        rename("temp.csv", auth_dir_path);
+        snprintf(line, sizeof(line), "User %s unbanned", username);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+
+    char log_message[BUF_SIZE];
+    snprintf(log_message, sizeof(log_message), "User %s diunbanned", username);
+    log_action(channel, log_message);
+```
+Fungsi ini membatalkan _ban_ pengguna dari channel tertentu. Fungsi membaca file otentikasi _channel_, mencari pengguna yang sesuai, dan mengubah perannya kembali menjadi "USER". Perubahan disimpan dan dicatat dalam file log channel. Konfirmasi dikirim ke klien.
+
+### 40. Fungsi `create_channel`
+```
+void create_channel(int socket, const char *username, int user_id, const char *channel_name, const char *key) {
+    FILE *file = fopen(CHANNEL_FILE, "r");
+    int max_id = 0;
+
+    if (file) {
+        char line[BUF_SIZE];
+        while (fgets(line, sizeof(line), file)) {
+            int id;
+            char stored_channel[BUF_SIZE];
+            if (sscanf(line, "%d,%[^,]", &id, stored_channel) == 2) {
+                if (strcmp(stored_channel, channel_name) == 0) {
+                    fclose(file);
+                    write(socket, "Channel already exists", strlen("Channel already exists"));
+                    return;
+                }
+                if (id > max_id) {
+                    max_id = id;
+                }
+            }
+        }
+        fclose(file);
+    }
+
+    file = fopen(CHANNEL_FILE, "a");
+    if (!file) {
+        perror("fopen");
+        return;
+    }
+
+    int new_id = max_id + 1;
+    char *encrypted_key = bcrypt(key);
+    fprintf(file, "%d,%s,%s\n", new_id, channel_name, encrypted_key);
+    free(encrypted_key);
+    fclose(file);
+
+    char channel_dir_path[BUF_SIZE];
+    snprintf(channel_dir_path, sizeof(channel_dir_path), "%s/%s", DISCORIT_DIR, channel_name);
+
+    if (mkdir(channel_dir_path, 0777) == -1) {
+        perror("mkdir");
+        write(socket, "Failed to create channel directory", strlen("Failed to create channel directory"));
+        return;
+    }
+
+    char admin_dir_path[BUF_SIZE];
+    snprintf(admin_dir_path, sizeof(admin_dir_path), "%s/%s/admin", DISCORIT_DIR, channel_name);
+
+    if (mkdir(admin_dir_path, 0777) == -1) {
+        perror("mkdir");
+        write(socket, "Failed to create admin directory", strlen("Failed to create admin directory"));
+        return;
+    }
+
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/auth.csv", admin_dir_path);
+    FILE *auth_file = fopen(auth_dir_path, "w");
+    if (!auth_file) {
+        perror("fopen");
+        return;
+    }
+
+    if(is_root(socket, username)){
+        fprintf(auth_file, "%d,%s,ROOT\n", user_id, username);
+    } else {
+        fprintf(auth_file, "%d,%s,ADMIN\n", user_id, username);
+    }
+
+    fclose(auth_file);
+
+    // Log the channel creation
+    char log_action_msg[BUF_SIZE];
+    snprintf(log_action_msg, sizeof(log_action_msg), "%s buat %s", username, channel_name);
+    log_action(channel_name, log_action_msg);
+
+    char response[BUF_SIZE];
+    snprintf(response, sizeof(response), "Channel %s dibuat", channel_name);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini membuat _channel_ baru. Fungsi memeriksa apakah _channel_ sudah ada, membuat entri baru dalam file _channel_, membuat direktori channel dan admin, serta membuat file otentikasi _channel_. Fungsi juga menambahkan pengguna yang membuat _channel sebagai admin atau root. Konfirmasi dikirim ke klien.
+
+### 41. Fungsi `edit_channel`
+```
+void edit_channel(int socket, const char *username, const char *channel_name, const char *new_channel_name) {
+    FILE *file = fopen(CHANNEL_FILE, "r");
+    FILE *temp = fopen("temp.csv", "w");
+    if (!file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_channel[BUF_SIZE], key[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_channel, key);
+        if (strcmp(stored_channel, channel_name) == 0) {
+            fprintf(temp, "%d,%s,%s\n", id, new_channel_name, key);
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    char log_action_msg[BUF_SIZE];
+
+    if (found) {
+        remove(CHANNEL_FILE);
+        rename("temp.csv", CHANNEL_FILE);
+
+        // Rename the channel folder
+        char old_channel_dir[BUF_SIZE], new_channel_dir[BUF_SIZE];
+        snprintf(old_channel_dir, sizeof(old_channel_dir), "%s/%s", DISCORIT_DIR, channel_name);
+        snprintf(new_channel_dir, sizeof(new_channel_dir), "%s/%s", DISCORIT_DIR, new_channel_name);
+
+        if (rename(old_channel_dir, new_channel_dir) == -1) {
+            perror("rename");
+            snprintf(line, sizeof(line), "Failed to rename channel directory from %s to %s", channel_name, new_channel_name);
+        } else {
+            snprintf(line, sizeof(line), "%s nama channel berubah menjadi %s", channel_name, new_channel_name);
+            snprintf(log_action_msg, sizeof(log_action_msg), "%s merubah %s menjadi %s", username, channel_name, new_channel_name);
+            log_action(new_channel_name, log_action_msg);
+        }
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "Channel %s not found", channel_name);
+    }
+
+    write(socket, line, strlen(line));
+}
+```
+Fungsi ini akan mengubah nama _channel_ yang ada. Fungsi membaca file channel, mencari channel yang sesuai, dan memperbarui namanya. Setelah memperbarui file _channel_, fungsi juga mengubah nama direktori _channel_. Fungsi mencatat perubahan dalam log dan mengirim konfirmasi ke klien.
+
+### 42. Fungsi `delete_channel`
+```
+void delete_channel(int socket, const char *channel_name) {
+    FILE *file = fopen(CHANNEL_FILE, "r");
+    FILE *temp = fopen("temp.csv", "w");
+    if (!file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), file)) {
+        char stored_channel[BUF_SIZE];
+        sscanf(line, "%*d,%[^,],%*s", stored_channel);  // Correctly parse channel name
+        if (strcmp(stored_channel, channel_name) != 0) {
+            fputs(line, temp);
+        } else {
+            found = 1;
+        }
+    }
+
+    fclose(file);
+    fclose(temp);
+
+    if (found) {
+        remove(CHANNEL_FILE);
+        rename("temp.csv", CHANNEL_FILE);
+
+        char response[BUF_SIZE];
+        snprintf(response, sizeof(response), "%s berhasil dihapus", channel_name);
+        write(socket, response, strlen(response));
+
+        // Delete the channel directory
+        char channel_dir_path[BUF_SIZE];
+        snprintf(channel_dir_path, sizeof(channel_dir_path), "%s/%s", DISCORIT_DIR, channel_name);
+
+        int delete_result = remove_directory(channel_dir_path);
+        if (delete_result == -1) {
+            perror("remove_directory");
+        }
+
+    } else {
+        remove("temp.csv");
+
+        char response[BUF_SIZE];
+        snprintf(response, sizeof(response), "Channel %s tidak ditemukan", channel_name);
+        write(socket, response, strlen(response));
+    }
+}
+```
+Fungsi ini menghapus _channel_ yang ada. Fungsi membaca file _channel_, menghapus entri _channel_ yang sesuai, dan menyimpan perubahan. Setelah memperbarui file _channel_, fungsi juga menghapus direktori channel beserta seluruh isinya. Fungsi mengirim konfirmasi ke klien.
+
+### 43. Fungsi `join_channel`
+```
+void join_channel(int socket, const char *username, const char *channel, int id,const char *key) {
+    
+    if (is_member(socket, channel, username)){
+        char line[BUF_SIZE];
+        sprintf(line, "%s masuk ke channel %s", username, channel);
+        log_action(channel, line);
+
+        char response[BUF_SIZE];
+        snprintf(response, sizeof(response), "%s bergabung dengan channel %s", username, channel);
+        write(socket, response, strlen(response));
+
+        //const char* channel_msg = "CHANNEL_NAME";
+        //write(socket, channel_msg, strlen(channel_msg));
+        //write(socket, channel, strlen(channel));
+    }else{
+
+        char auth_dir_path[BUF_SIZE];
+        snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel);
+
+        FILE *auth_file = fopen(auth_dir_path, "a");
+        if (!auth_file) {
+            perror("fopen");
+            return;
+        }
+
+        if(is_root(socket, username)){
+            fprintf(auth_file, "%d,%s,ROOT\n", id, username);
+        } else {
+            fprintf(auth_file, "%d,%s,USER\n", id, username);
+        }
+
+        fclose(auth_file);
+
+        char line[BUF_SIZE];
+
+        sprintf(line, "%s masuk ke channel %s", username, channel);
+        log_action(channel, line);
+
+        char response[BUF_SIZE];
+        snprintf(response, sizeof(response), "%s bergabung dengan channel %s", username, channel);
+        write(socket, response, strlen(response));
+
+        const char* channel_msg = "CHANNEL_NAME";
+        //write(socket, channel_msg, strlen(channel_msg));
+        //write(socket, channel, strlen(channel));
+    }
+}
+```
+Fungsi ini menambahkan pengguna ke _channel_. Jika pengguna sudah menjadi anggota, fungsi hanya mencatat aksi join. Jika pengguna baru, fungsi menambahkan pengguna ke file otentikasi _channel_ dengan peran yang sesuai. Fungsi mencatat aksi join dalam log dan mengirim konfirmasi ke klien.
+
+### 44. Fungsi `kick_user`
+```
+void kick_user(int socket, const char *channel, const char *username) {
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    FILE *temp = fopen("temp.csv", "w");
+
+    if (!auth_file || !temp) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int found = 0;
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0) {
+            found = 1;
+        } else {
+            fputs(line, temp);
+        }
+    }
+
+    fclose(auth_file);
+    fclose(temp);
+
+    if (found) {
+        remove(auth_dir_path);
+        rename("temp.csv", auth_dir_path);
+        snprintf(line, sizeof(line), "User %s berhasil dikeluarkan dari channel %s", username, channel);
+    } else {
+        remove("temp.csv");
+        snprintf(line, sizeof(line), "User %s not found", username);
+    }
+
+    write(socket, line, strlen(line));
+
+    char log_message[BUF_SIZE];
+    snprintf(log_message, sizeof(log_message), "User %s dikeluarkan dari channel", username);
+    log_action(channel, log_message);
+}
+```
+Fungsi ini mengeluarkan pengguna dari _channel_. Fungsi membaca file otentikasi _channel_, menghapus entri pengguna yang sesuai, dan menyimpan perubahan. Fungsi mencatat aksi kick dalam log dan mengirim konfirmasi ke klien.
+
+### 45. Fungsi `list_channels`
+```
+void list_channels(int socket) {
+   DIR *dir = opendir(DISCORIT_DIR);
+    if (!dir) {
+        perror("opendir");
+        return;
+    }
+
+    struct dirent *entry;
+    char response[BUF_SIZE] = "Channels: ";
+    while ((entry = readdir(dir))) {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            strcat(response, entry->d_name);
+            strcat(response, " ");
+        }
+    }
+
+    closedir(dir);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini menunjukkan daftar semua _channel_ yang ada. Fungsi membaca direktori DiscorIT dan mengumpulkan nama semua subdirektori (kecuali "." dan "..") sebagai nama _channel_.
+
+### 46. Fungsi `create_room`
+```
+void create_room(int socket, const char *username, const char *channel, const char *room){
+    char room_dir_path[BUF_SIZE];
+    snprintf(room_dir_path, sizeof(room_dir_path), "%s/%s/%s", DISCORIT_DIR, channel, room);
+
+    if (mkdir(room_dir_path, 0777) == -1) {
+        perror("mkdir");
+        write(socket, "Failed to create room directory", strlen("Failed to create room directory"));
+        return;
+    }
+
+    char chat_file_path[BUF_SIZE];
+    snprintf(chat_file_path, sizeof(chat_file_path), "%s/chat.csv", room_dir_path);
+
+    FILE *chat_file = fopen(chat_file_path, "w");
+    if (!chat_file) {
+        perror("fopen");
+        return;
+    }
+
+    fclose(chat_file);
+
+    char line[BUF_SIZE];
+    sprintf(line, "%s membuat room %s", username, room);
+    log_action(channel, line);
+
+    char response[BUF_SIZE];
+    snprintf(response, sizeof(response), "Room %s created", room);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini membuat _room_ baru dalam channel. Fungsi membuat direktori _room_ baru dan file chat kosong di dalamnya.
+
+### 47. Fungsi `join_room`
+```
+void join_room(int socket, const char *username, const char *channel, const char *room) {
+    char line[BUF_SIZE];
+    sprintf(line, "%s masuk ke room %s", username, room);
+    log_action(channel, line);
+
+    char response[BUF_SIZE];
+    snprintf(response, sizeof(response), "%s bergabung dengan room %s", username, room);
+    write(socket, response, strlen(response));
+}
+```
+Mencatat aksi pengguna bergabung ke _room_. Fungsi mencatat aksi join dalam log channel dan mengirim konfirmasi ke klien.
+
+### 48. Fungsi `list_rooms`
+```
+void list_rooms(int socket, const char *channel) {
+    char channel_dir_path[BUF_SIZE];
+    snprintf(channel_dir_path, sizeof(channel_dir_path), "%s/%s", DISCORIT_DIR, channel);
+
+    DIR *dir = opendir(channel_dir_path);
+    if (!dir) {
+        perror("opendir");
+        return;
+    }
+
+    struct dirent *entry;
+    char response[BUF_SIZE] = "Rooms: ";
+    while ((entry = readdir(dir))) {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            if(strcmp(entry->d_name, "admin") == 0) {
+                continue;
+            }
+            strcat(response, entry->d_name);
+            strcat(response, " ");
+        }
+    }
+
+    closedir(dir);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi dan _logic_nya mirip `list_channels` namun untuk _room_.
+
+### 49. Fungsi `edit_room`
+```
+void edit_room(int socket, const char *username, const char *channel, const char *room, const char *new_room) {
+    char old_room_dir_path[BUF_SIZE];
+    snprintf(old_room_dir_path, sizeof(old_room_dir_path), "%s/%s/%s", DISCORIT_DIR, channel, room);
+
+    char new_room_dir_path[BUF_SIZE];
+    snprintf(new_room_dir_path, sizeof(new_room_dir_path), "%s/%s/%s", DISCORIT_DIR, channel, new_room);
+
+    if (rename(old_room_dir_path, new_room_dir_path) == -1) {
+        perror("rename");
+        write(socket, "Failed to rename room directory", strlen("Failed to rename room directory"));
+        return;
+    }
+
+    char line[BUF_SIZE];
+    sprintf(line, "%s merubah room %s menjadi %s", username, room, new_room);
+    log_action(channel, line);
+
+    char response[BUF_SIZE];
+    snprintf(response, sizeof(response), "%s nama room berubah menjadi %s", room, new_room);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini mengubah nama _room_ yang ada lalu mencatat perubahan dalam log _channel_ dan mengirim konfirmasi ke klien.
+
+### 50. Fungsi `delete_room`
+```
+void delete_room(int socket, const char *channel, const char *room, const char *username) {
+    char room_dir_path[BUF_SIZE];
+    snprintf(room_dir_path, sizeof(room_dir_path), "%s/%s/%s", DISCORIT_DIR, channel, room);
+
+    int delete_result = remove_directory(room_dir_path);
+    if (delete_result == -1) {
+        perror("remove_directory");
+        write(socket, "Failed to delete room directory", strlen("Failed to delete room directory"));
+        return;
+    }
+
+    char line[BUF_SIZE];
+    sprintf(line, "%s menghapus room %s", username, room);
+    log_action(channel, line);
+
+    char response[BUF_SIZE];
+    snprintf(response, sizeof(response), "Room %s deleted", room);
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini menghapus _room_ yang ada. Fungsi menghapus direktori _room_ beserta seluruh isinya. Fungsi mencatat penghapusan _room_ dalam log _channel_ dan mengirim konfirmasi ke klien.
+
+### 51. Fungsi `delete_all_rooms`
+```
+void delete_all_rooms(int socket, const char *channel, const char *username) {
+    char channel_dir_path[BUF_SIZE];
+    snprintf(channel_dir_path, sizeof(channel_dir_path), "%s/%s", DISCORIT_DIR, channel);
+
+    DIR *dir = opendir(channel_dir_path);
+    if (!dir) {
+        perror("opendir");
+        return;
+    }
+
+    struct dirent *entry;
+    while ((entry = readdir(dir))) {
+        if (entry->d_type == DT_DIR && strcmp(entry->d_name, ".") != 0 && strcmp(entry->d_name, "..") != 0) {
+            if(strcmp(entry->d_name, "admin") == 0) {
+                continue;
+            }
+            char room_dir_path[BUF_SIZE];
+            snprintf(room_dir_path, sizeof(room_dir_path), "%s/%s", channel_dir_path, entry->d_name);
+
+            int delete_result = remove_directory(room_dir_path);
+            if (delete_result == -1) {
+                perror("remove_directory");
+                write(socket, "Failed to delete room directory", strlen("Failed to delete room directory"));
+                return;
+            }
+        }
+    }
+
+    closedir(dir);
+
+    char line[BUF_SIZE];
+    sprintf(line, "%s menghapus semua room", username);
+    log_action(channel, line);
+
+    char response[BUF_SIZE];
+    snprintf(response, sizeof(response), "All rooms deleted");
+    write(socket, response, strlen(response));
+}
+```
+Fungsi ini memulai proses penghapusan semua _room_ dalam channel. Fungsi membuka direktori _channel_ untuk iterasi lebih lanjut.
+
+### 52. Fungsi `sanitize_string`
+```
+// Helper function to sanitize strings
+void sanitize_string(const char *input, char *output, size_t output_size) {
+    size_t i, j;
+    for (i = 0, j = 0; input[i] != '\0' && j < output_size - 1; i++) {
+        if (input[i] != ',' && input[i] != '\n') {
+            output[j++] = input[i];
+        }
+    }
+    output[j] = '\0';
+}
+```
+_Function_ ini membersihkan string input dari karakter koma dan newline. Ia menyalin karakter-karakter yang valid ke dalam buffer output, memastikan tidak melebihi ukuran buffer yang ditentukan. Function ini penting untuk mencegah injeksi data yang tidak diinginkan ke dalam file CSV. Hasil akhirnya adalah string yang aman untuk disimpan dalam format CSV.
+
+### 53. Fungsi `chat`
+```
+void chat(int socket, const char *channel, const char *room, const char *username, const char *message) {
+    char chat_file_path[BUF_SIZE];
+    if (snprintf(chat_file_path, sizeof(chat_file_path), "%s/%s/%s/chat.csv", DISCORIT_DIR, channel, room) >= sizeof(chat_file_path)) {
+        // Path too long
+        const char *error_msg = "Error: Path too long";
+        send(socket, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    FILE *chat_file = fopen(chat_file_path, "a+");
+    if (!chat_file) {
+        perror("fopen");
+        const char *error_msg = "Error: Could not open chat file";
+        send(socket, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    int id_chat = 1;
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), chat_file)) {
+        if (strlen(line) <= 1) continue;
+        char *token = strtok(line, ",");
+        if (token) {
+            int current_id_chat = atoi(token);
+            if (current_id_chat >= id_chat) {
+                id_chat = current_id_chat + 1;
+            }
+        }
+    }
+
+    time_t now = time(NULL);
+    struct tm *tm = localtime(&now);
+    char timestamp[BUF_SIZE];
+    strftime(timestamp, sizeof(timestamp), "%Y-%m-%d %H:%M:%S", tm);
+
+    // Sanitize username and message to remove newlines and commas
+    char safe_username[BUF_SIZE], safe_message[BUF_SIZE];
+    sanitize_string(username, safe_username, sizeof(safe_username));
+    sanitize_string(message, safe_message, sizeof(safe_message));
+
+    fprintf(chat_file, "%d,%s,%s,%s\n", id_chat, timestamp, safe_username, safe_message);
+    fclose(chat_file);
+
+    char send_message[BUF_SIZE];
+    snprintf(send_message, sizeof(send_message), "Chat Baru: %s", safe_message);
+    send(socket, send_message, strlen(send_message), 0);
+
+    char log_message[BUF_SIZE];
+    snprintf(log_message, sizeof(log_message), "%s: %s", safe_username, safe_message);
+    log_action(room, log_message);
+}
+```
+_Function_ ini menangani pengiriman pesan chat baru. Ia membuka file chat yang sesuai, menentukan ID chat berikutnya, dan menambahkan entri baru dengan _timestamp_. _Function_ ini menggunakan `sanitize_string` untuk membersihkan _username_ dan pesan sebelum menyimpannya. Setelah menyimpan pesan, ia mengirimkan konfirmasi ke client dan mencatat aksi tersebut dalam log.
+
+### 54. Fungsi `edit_chat`
+```
+void edit_chat(int socket, const char *channel, const char *room, const char *username, int id_chat, const char *new_message) {
+    char chat_file_path[BUF_SIZE];
+    snprintf(chat_file_path, sizeof(chat_file_path), "%s/%s/%s/chat.csv", DISCORIT_DIR, channel, room);
+
+    FILE *chat_file = fopen(chat_file_path, "r");
+    FILE *temp_file = fopen("temp.csv", "w");
+
+    if (!chat_file || !temp_file) {
+        perror("fopen");
+        const char *error_msg = "Error: Could not open files";
+        send(socket, error_msg, strlen(error_msg), 0);
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int edited = 0;
+    while (fgets(line, sizeof(line), chat_file)) {
+        char original_line[BUF_SIZE];
+        strncpy(original_line, line, sizeof(original_line));
+
+        char *token = strtok(line, ",");
+        if (token) {
+            int current_id_chat = atoi(token);
+            if (current_id_chat == id_chat) {
+                // Extract original timestamp and username
+                char *original_timestamp = strtok(NULL, ",");
+                char *original_username = strtok(NULL, ",");
+
+                // Sanitize new_message to remove newlines and commas
+                char safe_new_message[BUF_SIZE];
+                sanitize_string(new_message, safe_new_message, sizeof(safe_new_message));
+
+                fprintf(temp_file, "%d,%s,%s,%s\n", id_chat, original_timestamp, original_username, safe_new_message);
+                edited = 1;
+            } else {
+                // Write the original line to the temporary file
+                fputs(original_line, temp_file);
+            }
+        } else {
+            // If line parsing fails, write the original line
+            fputs(original_line, temp_file);
+        }
+    }
+
+    fclose(chat_file);
+    fclose(temp_file);
+
+    if (edited) {
+        // Replace the original file with the temporary file
+        if (remove(chat_file_path) == 0 && rename("temp.csv", chat_file_path) == 0) {
+            const char *success_msg = "Chat berhasil diubah";
+            send(socket, success_msg, strlen(success_msg), 0);
+
+            char log_message[BUF_SIZE];
+            snprintf(log_message, sizeof(log_message), "%s mengubah chat %d", username, id_chat);
+
+            log_action(channel, log_message);
+        } else {
+            perror("File operation failed");
+            const char *error_msg = "Error: Failed to update chat file";
+            send(socket, error_msg, strlen(error_msg), 0);
+        }
+    } else {
+        // Remove the temporary file if no edit was made
+        remove("temp.csv");
+        const char *not_found_msg = "Error: Chat message not found";
+        send(socket, not_found_msg, strlen(not_found_msg), 0);
+    }
+}
+```
+_Function_ ini memungkinkan pengeditan pesan chat yang ada. Ia membaca file chat yang ada, mencari pesan dengan ID yang sesuai, dan menggantinya dengan pesan baru yang telah disanitasi. _Function_ ini menggunakan file sementara untuk menyimpan perubahan sebelum menggantikan file asli. Jika berhasil, ia mengirimkan konfirmasi ke client dan mencatat perubahan dalam log.
+
+### 55. Fungsi `delete_chat`
+```
+void delete_chat(int socket, const char *channel, const char *room, int id_chat) {
+    char chat_file_path[BUF_SIZE];
+    char temp_file_path[BUF_SIZE];
+    snprintf(chat_file_path, sizeof(chat_file_path), "%s/%s/%s/chat.csv", DISCORIT_DIR, channel, room);
+    snprintf(temp_file_path, sizeof(temp_file_path), "%s/%s/%s/temp_chat.csv", DISCORIT_DIR, channel, room);
+
+    FILE *chat_file = fopen(chat_file_path, "r");
+    FILE *temp_file = fopen(temp_file_path, "w");
+
+    if (!chat_file || !temp_file) {
+        perror("Error opening files");
+        if (chat_file) fclose(chat_file);
+        if (temp_file) fclose(temp_file);
+        send(socket, "Error: Could not delete chat", 28, 0);
+        return;
+    }
+
+    char line[BUF_SIZE];
+    int deleted = 0;
+    int line_count = 0;
+
+    while (fgets(line, sizeof(line), chat_file)) {
+        line_count++;
+        
+        // Skip the header line if it exists
+        if (line_count == 1 && strstr(line, "date") && strstr(line, "id_chat")) {
+            fputs(line, temp_file);
+            continue;
+        }
+
+        int current_id_chat;
+        char sender[BUF_SIZE], chat_content[BUF_SIZE], date[BUF_SIZE];
+
+        // Parse the line according to the format
+        if (sscanf(line, "%d,%[^,],%[^,],%[^\n]", &current_id_chat, date, sender, chat_content) == 4) {
+            if (current_id_chat != id_chat) {
+                fputs(line, temp_file);
+            } else {
+                deleted = 1;
+            }
+        } else {
+            // If parsing fails, write the line as is
+            fputs(line, temp_file);
+        }
+    }
+
+    fclose(chat_file);
+    fclose(temp_file);
+
+    if (deleted) {
+        // Replace the original file with the temporary file
+        if (remove(chat_file_path) != 0 || rename(temp_file_path, chat_file_path) != 0) {
+            perror("Error replacing file");
+            send(socket, "Error: Could not delete chat", 28, 0);
+            return;
+        }
+        send(socket, "Chat Dihapus", 12, 0);
+
+        char log_message[BUF_SIZE];
+        snprintf(log_message, sizeof(log_message), "Chat %d dihapus", id_chat);
+        log_action(channel, log_message);
+    } else {
+        // Remove the temporary file if no edit was made
+        remove(temp_file_path);
+        send(socket, "Chat not found", 14, 0);
+    }
+}
+```
+_Function_ ini menghapus pesan chat tertentu berdasarkan ID-nya. Ia membaca file chat, menyalin semua pesan kecuali yang akan dihapus ke file sementara. _Function_ ini menangani kemungkinan adanya baris _header_ dalam file CSV. Setelah penghapusan selesai, file asli diganti dengan file sementara dan konfirmasi dikirim ke client.
+
+### 56. Fungsi `see_chat`
+```
+void see_chat(int socket, const char *channel, const char *room) {
+    char chat_file_path[BUF_SIZE];
+    snprintf(chat_file_path, sizeof(chat_file_path), "%s/%s/%s/chat.csv", DISCORIT_DIR, channel, room);
+
+    FILE *chat_file = fopen(chat_file_path, "r");
+    if (!chat_file) {
+        perror("fopen");
+        return;
+    }
+
+    char response[BUF_SIZE * 10] = "Chat:\n";  // Increased buffer size for response
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), chat_file)) {
+        // Ignore empty lines
+        if (strlen(line) <= 1) continue;
+
+        char id_chat[BUF_SIZE], timestamp[BUF_SIZE], username[BUF_SIZE], message[BUF_SIZE];
+        
+        // Use a pointer to keep track of our position in the line
+        char *ptr = line;
+        
+        // Parse id_chat
+        sscanf(ptr, "%[^,]", id_chat);
+        ptr = strchr(ptr, ',') + 1;
+        
+        // Parse timestamp
+        sscanf(ptr, "%[^,]", timestamp);
+        ptr = strchr(ptr, ',') + 1;
+        
+        // Parse username
+        sscanf(ptr, "%[^,]", username);
+        ptr = strchr(ptr, ',') + 1;
+        
+        // The rest of the line is the message (including spaces)
+        strcpy(message, ptr);
+        
+        // Remove newline from message if present
+        char *newline = strchr(message, '\n');
+        if (newline) *newline = '\0';
+
+        char chat_info[BUF_SIZE];
+        snprintf(chat_info, sizeof(chat_info), "[%s][%s][%s] \"%s\"\n", timestamp, id_chat, username, message);
+        
+        // Check if appending chat_info would overflow response
+        if (strlen(response) + strlen(chat_info) < sizeof(response) - 1) {
+            strcat(response, chat_info);
+        } else {
+            // If we're about to overflow, stop adding messages
+            strcat(response, "...\n(more messages not shown due to buffer limit)\n");
+            break;
+        }
+    }
+
+    fclose(chat_file);
+    write(socket, response, strlen(response));
+}
+```
+_Function_ ini menampilkan isi chat dari file chat yang ditentukan. Ia membaca file baris per baris, memparse setiap baris menjadi komponen-komponennya (ID, timestamp, username, pesan), dan memformatnya ke dalam string `response`. _Function_ ini menangani kemungkinan overflow buffer dengan membatasi jumlah pesan yang ditampilkan. Hasil akhirnya dikirim ke client melalui socket.
