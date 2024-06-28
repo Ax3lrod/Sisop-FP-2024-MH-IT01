@@ -463,7 +463,7 @@ Chat Management:
 - delete_chat: Menghapus pesan yang sudah dikirim.
 - see_chat: Melihat pesan dalam ruangan tertentu.
 
-### 3. Fungsi remove_directory
+### 3. Fungsi `remove_directory`
 ````
 int remove_directory(const char *path) {
     DIR *d = opendir(path);
@@ -595,7 +595,7 @@ return r;
 - if (!r) r = rmdir(path);: Jika semua entri berhasil dihapus (r adalah 0), hapus direktori itu sendiri.
 - return r;: Mengembalikan nilai r yang menunjukkan keberhasilan (0) atau kegagalan (nilai negatif) operasi penghapusan direktori.
 
-### 4. Fungsi get_timestamp
+### 4. Fungsi `get_timestamp`
 ````
 void get_timestamp(char *buffer, size_t buffer_size) {
     time_t now = time(NULL);
@@ -609,7 +609,7 @@ time_t now = time(NULL);: Mendapatkan waktu saat ini.
 struct tm *t = localtime(&now);: Mengonversi waktu ke format lokal.
 strftime(buffer, buffer_size, "[%d/%m/%Y %H:%M:%S]", t);: Memformat waktu dan menyimpannya dalam buffer.
 
-### 5. Fungsi log_action
+### 5. Fungsi `log_action`
 ````
 void log_action(const char *channel_name, const char *event) {
     char log_file_path[BUF_SIZE];
@@ -637,7 +637,7 @@ Fungsi ini mencatat sebuah aksi ke file log (user.log) yang terletak di dalam fo
 - fprintf(log_file, "%s %s\n", timestamp, event);: Menulis timestamp dan event ke file log.
 - fclose(log_file);: Menutup file log.
 
-### 6. Fungsi daemonize
+### 6. Fungsi `daemonize`
 ````
 void daemonize() {
     pid_t pid;
@@ -850,7 +850,7 @@ Penjelasan:
 Fungsi ini mengirim pesan ke semua klien yang bertindak sebagai monitor.
 Iterasi melalui semua klien dan mengirim pesan jika klien adalah monitor.
 
-### 9. Fungsi find_monitor_client
+### 9. Fungsi `find_monitor_client`
 ````
 int find_monitor_client(const char *username) {
     for (int i = 0; i < MAX_CLIENTS; i++) {
@@ -865,7 +865,7 @@ Penjelasan:
 Fungsi ini mencari klien monitor berdasarkan nama pengguna.
 Mengembalikan indeks klien jika ditemukan, atau -1 jika tidak ditemukan.
 
-### 10. Fungsi send_message_to_monitor
+### 10. Fungsi send_message_to_monitor`
 ````
 void send_message_to_monitor(Session *session, const char *message) {
     int monitor_index = find_monitor_client(session->username);
@@ -878,7 +878,7 @@ Penjelasan:
 Fungsi ini mengirim pesan ke klien monitor yang sesuai dengan nama pengguna dalam sesi.
 Menggunakan find_monitor_client untuk menemukan klien dan mengirim pesan jika ditemukan.
 
-### 11. Fungsi close_monitor_sessions
+### 11. Fungsi `close_monitor_sessions`
 ````
 void close_monitor_sessions() {
     for (int i = 0; i < client_count; i++) {
@@ -895,3 +895,128 @@ Penjelasan:
 Fungsi ini menutup semua sesi klien yang bertindak sebagai monitor.
 Iterasi melalui semua klien, menutup socket klien yang adalah monitor, dan mengatur ulang status klien.
 
+### 12. Fungsi `is_logged_in`
+````
+bool is_logged_in(const char *username) {
+    for (int i = 0; i < client_count; i++) {
+        if (clients[i].logged_in && strcmp(clients[i].username, username) == 0) {
+            return 1;
+        }
+    }
+    return 0;
+}\
+````
+Penjelasan:
+Fungsi ini memeriksa apakah pengguna dengan username tertentu sudah login.
+Melakukan iterasi melalui daftar klien (clients), jika ditemukan klien yang sudah login dengan username yang cocok, mengembalikan true (1). Jika tidak ditemukan, mengembalikan false (0).
+
+### 13. Fungsi `handle_client`
+````
+void *handle_client(void *arg) {
+    int socket = *(int *)arg;
+    char buffer[BUF_SIZE];
+    int bytes_read;
+    Session session = {0}; // Initialize session
+    monitorSession monitor_session = {0}; // Initialize monitor session 
+    int client_index = -1;
+
+    // Add client to the list
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket == 0) {
+            clients[i].socket = socket;
+            client_index = i;
+            client_count++;
+            break;
+        }
+    }
+
+    //printf("Client connected\n"); // Debugging
+
+    while ((bytes_read = read(socket, buffer, BUF_SIZE)) > 0) {
+        buffer[bytes_read] = '\0';
+        //printf("Received: %s\n", buffer);
+
+        char command[BUF_SIZE], username[BUF_SIZE], password[BUF_SIZE];
+        sscanf(buffer, "%s %s -p %s", command, username, password);
+
+        if (strcmp(command, "REGISTER") == 0) {
+            if (register_user(username, password)) {
+                snprintf(buffer, sizeof(buffer), "%s berhasil register", username);
+            } else {
+                snprintf(buffer, sizeof(buffer), "%s sudah terdaftar", username);
+            }
+        } else if (strcmp(command, "LOGIN") == 0) {
+            int login_result = login_user(username, password, &session, 0);
+            if (login_result == -1) {
+                snprintf(buffer, sizeof(buffer), "User sudah login sebagai regular user");
+            } else if (login_result == 1) {
+                snprintf(buffer, sizeof(buffer), "%s berhasil login", username);
+                clients[client_index].logged_in = true;
+                clients[client_index].is_monitor = false;
+                strcpy(clients[client_index].username, username);
+            } else {
+                snprintf(buffer, sizeof(buffer), "Login gagal");
+            }
+        } else if (strcmp(command, "LOGIN_MONITOR") == 0) {
+            int login_result = login_user(username, password, &session, 1);
+            if (login_result == -1) {
+                snprintf(buffer, sizeof(buffer), "User sudah login sebagai monitor");
+            } else if (login_result == 1) {
+                snprintf(buffer, sizeof(buffer), "%s berhasil login sebagai monitor", username);
+                clients[client_index].is_monitor = true;
+                clients[client_index].logged_in = true;  // Set this to true for monitors as well
+                strcpy(clients[client_index].username, username);
+                monitor_session.logged_in = 1;
+            } else {
+                snprintf(buffer, sizeof(buffer), "Login gagal");
+            }
+        } else if (session.logged_in) {
+            // Process other commands only if logged in
+            process_command(socket, &session, buffer, &monitor_session);
+            memset(buffer, 0, sizeof(buffer));
+        } else {
+            snprintf(buffer, sizeof(buffer), "Anda harus login terlebih dahulu");
+        }
+
+        write(socket, buffer, strlen(buffer));
+        memset(buffer, 0, sizeof(buffer));
+    }
+
+    //printf("Client disconnected\n"); // Debugging
+    close(socket);
+
+    // Remove client from the list
+    if (clients[client_index].logged_in) {
+        logout_user(&session);
+    }
+    clients[client_index].socket = 0;
+    clients[client_index].is_monitor = false;
+    clients[client_index].logged_in = false;
+    strcpy(clients[client_index].username, "");
+    client_count--;
+
+    return NULL;
+}
+````
+Penjelasan:
+
+Inisialisasi:
+- Socket klien diterima sebagai argumen.
+- Buffer untuk membaca data dari klien dan variabel lainnya diinisialisasi.
+- Session dan monitorSession diinisialisasi untuk menyimpan informasi sesi dan monitor.
+- Mencari indeks klien yang kosong untuk menambahkan klien baru ke dalam daftar clients.
+
+Menerima dan Memproses Perintah Klien:
+- Loop membaca data dari socket klien.
+- Data yang diterima diparsing untuk mendapatkan perintah, username, dan password.
+- Memproses perintah REGISTER, LOGIN, dan LOGIN_MONITOR.
+- Jika perintah adalah REGISTER, memanggil register_user dan mengirimkan pesan berhasil atau gagal.
+- Jika perintah adalah LOGIN, memanggil login_user dan mengirimkan pesan berhasil atau gagal, serta mengatur status login klien dalam daftar clients.
+- Jika perintah adalah LOGIN_MONITOR, memanggil login_user untuk login sebagai monitor dan mengatur status monitor dan login klien dalam daftar clients.
+- Jika pengguna sudah login, memproses perintah lainnya dengan memanggil process_command.
+- Jika pengguna belum login, mengirimkan pesan bahwa pengguna harus login terlebih dahulu.
+
+Menutup Koneksi Klien:
+- Jika koneksi klien terputus, socket ditutup dan status klien dalam daftar clients direset.
+- Jika klien sudah login, memanggil logout_user untuk keluar dari sesi.
+- Mengurangi jumlah klien yang terhubung (client_count).
