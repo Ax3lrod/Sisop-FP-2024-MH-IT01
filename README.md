@@ -1487,3 +1487,81 @@ Membuka file autentikasi (auth.csv) dalam direktori tersebut.
 Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, stored_username, role).
 Jika stored_username cocok dengan username dan role adalah "BANNED", menutup file dan mengembalikan true.
 Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### Fungsi `bool username_taken`
+````
+bool username_taken(int socket, const char *username) {
+    FILE *file = fopen(USER_FILE, "r");
+    if (!file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        char stored_username[BUF_SIZE];
+        sscanf(line, "%*d,%[^,]", stored_username);
+        if (strcmp(stored_username, username) == 0) {
+            fclose(file);
+            return 1;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah username yang diberikan sudah digunakan oleh pengguna lain.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+username: Nama pengguna yang ingin diperiksa apakah sudah ada atau belum.
+
+Proses:
+Membuka file pengguna (USER_FILE) dalam mode baca. Jika gagal, mencetak pesan kesalahan dan mengembalikan false (seharusnya, tetapi saat ini fungsi tidak mengembalikan nilai apapun jika terjadi kesalahan).
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (stored_username).
+Jika stored_username cocok dengan username yang diberikan, menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### 27. Fungsi `bool my_message`
+````
+bool my_message(int socket, const char *channel_name, const char *room_name, const char *username, int id_chat) {
+    char chat_dir_path[BUF_SIZE];
+    snprintf(chat_dir_path, sizeof(chat_dir_path), "%s/%s/%s/chat.csv", DISCORIT_DIR, channel_name, room_name);
+
+    FILE *chat_file = fopen(chat_dir_path, "r");
+    if (!chat_file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), chat_file)) {
+        int id;
+        char sender[BUF_SIZE], message[BUF_SIZE], timestamp[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%[^,],%[^\n]", &id, timestamp, sender, message);
+        if (id == id_chat && strcmp(sender, username) == 0) {
+            fclose(chat_file);
+            return 1;
+        }
+    }
+
+    fclose(chat_file);
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah pesan dengan ID tertentu dikirim oleh pengguna yang diberikan dalam channel dan room tertentu.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel tempat pesan dikirim.
+room_name: Nama room tempat pesan dikirim.
+username: Nama pengguna yang mengirim pesan.
+id_chat: ID dari pesan yang ingin diperiksa.
+
+Proses:
+Menyusun jalur direktori chat berdasarkan DISCORIT_DIR, channel_name, dan room_name.
+Membuka file chat (chat.csv) dalam mode baca. Jika gagal, mencetak pesan kesalahan dan mengembalikan false (seharusnya, tetapi saat ini fungsi tidak mengembalikan nilai apapun jika terjadi kesalahan).
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, timestamp, sender, message).
+Jika id cocok dengan id_chat dan sender cocok dengan username, menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
