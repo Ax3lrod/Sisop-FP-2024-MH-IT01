@@ -1072,6 +1072,9 @@ Mengenkripsi password menggunakan bcrypt.
 Menulis informasi pengguna baru ke dalam file.
 Menutup file dan mengembalikan nilai 1 yang menunjukkan registrasi berhasil.
 
+![Screenshot 2024-06-27 201346](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/e32c45eb-3681-4ce9-bac3-ab0fddb64bb0)
+
+
 ### 15. Fungsi `login_user`
 ````
 int login_user(const char *username, const char *password, Session *session, int is_monitor) {
@@ -1579,11 +1582,17 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
     if (strstr(buffer, "LIST CHANNEL") != NULL) {
         list_channels(socket);
 ````
+![Screenshot 2024-06-27 201540](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/ae1e0f44-0ab1-45ab-a5f6-693d27696c6e)
+
+
 #### CREATE CHANNEL membuat channel baru dengan nama dan key yang diberikan.
 ````
     } else if (sscanf(buffer, "CREATE CHANNEL %s -k %s", channel_name, key) == 2) {
         create_channel(socket, session->username, session->user_id, channel_name, key);
 ````
+![Screenshot 2024-06-27 201613](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/5d06ba7a-ce6d-4a0b-b6bd-938bbb2b8afa)
+
+
 #### EDIT CHANNEL mengganti nama channel, jika user adalah admin atau root.
 ````
     } else if (sscanf(buffer, "EDIT CHANNEL %s TO %s", channel_name, new_channel_name) == 2) {
@@ -1659,6 +1668,9 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             }
         }
 ````
+![Screenshot 2024-06-27 201642](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/d5f1fd16-b6bc-4155-a379-a340f0c4786d)
+
+
 #### CREATE ROOM membuat room baru dalam channel saat ini, jika user adalah admin atau root.
 ````
     } else if (sscanf(buffer, "CREATE ROOM %s", room_name) == 1){
@@ -1699,6 +1711,10 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             write(socket, "Akses ditolak", strlen("Akses ditolak"));
         }
 ````
+![Screenshot 2024-06-28 000313](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/1c85ddc4-6167-4570-9df3-285487ac407a)
+
+
+
 #### DELETE ROOM menghapus room, jika user adalah admin atau root dan tidak berada dalam room tersebut.
 ````
     } else if (sscanf(buffer, "DEL ROOM %s", room_name) == 1) {
@@ -1741,6 +1757,9 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             }
         }
 ````
+![Screenshot 2024-06-27 201540](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/f368f5a1-784d-4e22-b620-470ffb09727a)
+
+
 #### EDIT PROFILE SELF mengubah password user saat ini.
 ````
     } else if (sscanf(buffer, "EDIT PROFILE SELF -u %s", new_username) == 1) {
@@ -1753,6 +1772,9 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
     } else if (sscanf(buffer, "EDIT PROFILE SELF -p %s", new_password) == 1) {
         edit_user_password(socket, session->username, new_password);
 ````
+![Screenshot 2024-06-28 000313](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/06275ae8-f243-4f1a-9a90-f4d60d793595)
+
+
 #### EDIT USER -u mengubah username user lain, jika user saat ini adalah root dan username baru belum terdaftar.
 ````
     } else if (sscanf(buffer, "EDIT WHERE %s -u %s", username, new_username) == 2) {
@@ -1797,6 +1819,9 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             write(socket, "Anda tidak berada dalam channel", strlen("Anda tidak berada dalam channel"));
         }
 ````
+![Screenshot 2024-06-28 000626](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/c083d9c7-323c-4f17-95a4-12f72a6f63e3)
+
+
 #### REMOVE menghapus user dari sistem, jika user saat ini adalah root dan user target bukan root.
 ````
     } else if (sscanf(buffer, "REMOVE %s", username) == 1) {
@@ -1810,6 +1835,9 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             write(socket, "Akses ditolak", strlen("Akses ditolak"));
         }
 ````
+![Screenshot 2024-06-28 000514](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/6428fe58-ff27-46b5-9467-ad3d48a2475d)
+
+
 #### BAN USER membanned user dari channel saat ini, jika user saat ini adalah admin atau root dan user target bukan anggota, admin, atau root.
 ````
     } else if (sscanf(buffer, "BAN %s", target_username) == 1){
@@ -1962,6 +1990,10 @@ void process_command(int socket, Session *session, char *buffer, monitorSession 
             write(socket, "Monitor harus login terlebih dahulu", strlen("Monitor harus login terlebih dahulu"));
         }
 ````
+CHAT, EDIT, DELETE, SEE
+![Screenshot 2024-06-27 202027](https://github.com/Ax3lrod/Sisop-FP-2024-MH-IT17/assets/151889425/c06133cc-2878-4828-9a33-3b2ca3a74281)
+
+
 #### EXIT, user akan keluar dari room dan channel saat ini, log exit akan dicatat, dan user akan keluar dari sistem.
 ````
     } else if (strcmp(buffer, "EXIT") == 0) {
