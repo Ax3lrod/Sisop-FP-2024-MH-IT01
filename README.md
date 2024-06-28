@@ -1565,3 +1565,431 @@ Membuka file chat (chat.csv) dalam mode baca. Jika gagal, mencetak pesan kesalah
 Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, timestamp, sender, message).
 Jika id cocok dengan id_chat dan sender cocok dengan username, menutup file dan mengembalikan true.
 Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### 28. Fungsi `process_command`
+````
+void process_command(int socket, Session *session, char *buffer, monitorSession *monitor_session) {
+    char command[BUF_SIZE], arg1[BUF_SIZE], arg2[BUF_SIZE], arg3[BUF_SIZE], key[BUF_SIZE], 
+    channel_name[BUF_SIZE], new_channel_name[BUF_SIZE], room_name[BUF_SIZE], new_room_name[BUF_SIZE], 
+    message[BUF_SIZE], new_username[BUF_SIZE], new_password[BUF_SIZE], target_username[BUF_SIZE], username[BUF_SIZE];
+    int id_chat;
+````
+#### LIST CHANNEL menampilkan daftar channel yang ada.
+````
+    if (strstr(buffer, "LIST CHANNEL") != NULL) {
+        list_channels(socket);
+````
+#### CREATE CHANNEL membuat channel baru dengan nama dan key yang diberikan.
+````
+    } else if (sscanf(buffer, "CREATE CHANNEL %s -k %s", channel_name, key) == 2) {
+        create_channel(socket, session->username, session->user_id, channel_name, key);
+````
+#### EDIT CHANNEL mengganti nama channel, jika user adalah admin atau root.
+````
+    } else if (sscanf(buffer, "EDIT CHANNEL %s TO %s", channel_name, new_channel_name) == 2) {
+        if(is_admin(socket, channel_name, session->username) || is_root(socket, session->username)) {
+            edit_channel(socket, session->username, channel_name, new_channel_name);
+            strcpy(session->current_channel, new_channel_name);
+        } else {
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### DELETE CHANNEL menghapus channel, jika user adalah admin atau root dan tidak berada dalam channel tersebut.
+````
+    } else if (sscanf(buffer, "DEL CHANNEL %s", channel_name) == 1) {
+        if(is_admin(socket, channel_name, session->username) || is_root(socket, session->username)) {
+            if(session->in_channel && strcmp(session->current_channel, channel_name) == 0) {
+                write(socket, "Anda sedang berada di channel ini", strlen("Anda sedang berada di channel ini"));
+            } else {
+                delete_channel(socket, channel_name);
+            }
+        } else {
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### JOIN CHANNEL/ROOM bergabung ke channel atau room. Jika channel memerlukan key, user harus memasukkan key yang benar.
+````
+    } else if (sscanf(buffer, "JOIN %s", channel_name) == 1) {
+        if(session->in_channel){
+            strcpy(room_name, channel_name);
+            if(room_exists(socket, session->current_channel, room_name) && (strcmp(room_name, "admin") != 0)){
+                if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username) || is_member(socket, session->current_channel, session->username)){
+                    join_room(socket, session->username, session->current_channel, room_name);
+                    session->in_room = 1;
+                    strcpy(session->current_room, room_name);
+                }else{
+                    write(socket, "Akses ditolak", strlen("Akses ditolak"));
+                }
+            } else {
+                write(socket, "Room tidak ditemukan", strlen("Room tidak ditemukan"));
+            }
+        }else{
+            if(channel_exists(socket, channel_name)){
+                if(is_banned(socket, channel_name, session->username)){
+                    write(socket, "Anda dibanned dari channel ini", strlen("Anda dibanned dari channel ini"));
+                }else{
+                    if(is_member(socket, channel_name, session->username) || is_root(socket, session->username) || is_admin(socket, channel_name, session->username)){
+                        join_channel(socket, session->username, channel_name, session->user_id,NULL);
+                        session->in_channel = 1;
+                        strcpy(session->current_channel, channel_name);
+                    } else {
+                        char key[BUF_SIZE];
+                        write(socket, "Key: ", strlen("Key: "));
+                        ssize_t bytes_read = read(socket, key, BUF_SIZE - 1);
+                        if (bytes_read > 0) {
+                            key[bytes_read] = '\0';  // Null-terminate the string
+                            // Remove newline if present
+                            char *newline = strchr(key, '\n');
+                            if (newline) *newline = '\0';
+
+                            if (validate_key(socket, channel_name, key)) {
+                                join_channel(socket, session->username, channel_name, session->user_id, key);
+                                session->in_channel = 1;
+                                strcpy(session->current_channel, channel_name);
+                            } else {
+                                write(socket, "Key salah\n", strlen("Key salah\n"));
+                            }
+                        } else {
+                            write(socket, "Error reading key\n", strlen("Error reading key\n"));
+                        }
+                    }
+                }
+            } else {
+                write(socket, "Channel tidak ditemukan", strlen("Channel tidak ditemukan"));
+            }
+        }
+````
+#### CREATE ROOM membuat room baru dalam channel saat ini, jika user adalah admin atau root.
+````
+    } else if (sscanf(buffer, "CREATE ROOM %s", room_name) == 1){
+        if(session->in_channel){
+            if (is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                create_room(socket, session->username, session->current_channel, room_name);
+            }else{
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+````
+#### LIST ROOM menampilkan daftar room dalam channel saat ini, jika user telah bergabung ke channel.
+````
+    } else if (strcmp(buffer, "LIST ROOM") == 0) {
+        if(session->in_channel){
+            list_rooms(socket, session->current_channel);
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+````
+#### EDIT ROOOM mengganti nama room dalam channel saat ini, jika user adalah admin atau root.
+````
+    } else if (sscanf(buffer, "EDIT ROOM %s TO %s", room_name, new_room_name) == 2) {
+        if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+            if(session->in_channel){
+                if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                    edit_room(socket, session->username, session->current_channel, room_name, new_room_name);
+                    strcpy(session->current_room, new_room_name);
+                }else{
+                    write(socket, "Akses ditolak", strlen("Akses ditolak"));
+                }
+            }else{
+                write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+            }
+        }else{
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### DELETE ROOM menghapus room, jika user adalah admin atau root dan tidak berada dalam room tersebut.
+````
+    } else if (sscanf(buffer, "DEL ROOM %s", room_name) == 1) {
+        if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+            if(session->in_channel){
+                if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                    if(strcmp(room_name, "ALL") == 0){
+                        delete_all_rooms(socket, session->current_channel, session->username);
+                    }else{
+                        if(session->in_room && strcmp(session->current_room, room_name) == 0){
+                            write(socket, "Anda sedang berada di room ini", strlen("Anda sedang berada di room ini"));
+                        }else{
+                            delete_room(socket, session->current_channel, room_name, session->username);
+                        }
+                    }
+                }else{
+                    write(socket, "Akses ditolak", strlen("Akses ditolak"));
+                }
+            }else{
+                write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+            }
+        }else{
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### LIST USER menampilkan daftar user, tergantung apakah user berada dalam channel atau merupakan root.
+````
+    } else if (strcmp(buffer, "LIST USER") == 0){
+        if(session->in_channel){
+            if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                list_channel_users(socket, session->current_channel);
+            }else{
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
+        }else{
+            if(is_root(socket, session->username)){
+                list_users(socket);
+            }else{
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
+        }
+````
+#### EDIT PROFILE SELF mengubah password user saat ini.
+````
+    } else if (sscanf(buffer, "EDIT PROFILE SELF -u %s", new_username) == 1) {
+        if(username_taken(socket, new_username)){
+            write(socket, "Username sudah terdaftar", strlen("Username sudah terdaftar"));
+        }else{
+            edit_user_name(socket, session->username, new_username);
+            strcpy(session->username, new_username);
+        }
+    } else if (sscanf(buffer, "EDIT PROFILE SELF -p %s", new_password) == 1) {
+        edit_user_password(socket, session->username, new_password);
+````
+#### EDIT USER -u mengubah username user lain, jika user saat ini adalah root dan username baru belum terdaftar.
+````
+    } else if (sscanf(buffer, "EDIT WHERE %s -u %s", username, new_username) == 2) {
+        if(is_root(socket, session->username)){
+            if(username_taken(socket, new_username)){
+                write(socket, "Username sudah terdaftar", strlen("Username sudah terdaftar"));
+            }else{
+                if(strcmp(username, session->username) == 0){
+                    edit_user_name(socket, username, new_username);
+                    strcpy(session->username, new_username);
+                }else{
+                    edit_user_name_other(socket, username, new_username);
+                }
+            }
+        }else{
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### EDIT USER -p mengubah password user lain, jika user saat ini adalah root.
+````
+    } else if (sscanf(buffer, "EDIT WHERE %s -p %s", username, new_password) == 2) {
+        if(is_root(socket, session->username)){
+            edit_user_password(socket, username, new_password);
+        }else{
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### REMOVE USER mengeluarkan user dari channel saat ini, jika user saat ini adalah admin atau root dan user target adalah anggota channel.
+````
+    } else if (sscanf(buffer, "REMOVE USER %s", username) == 1) {
+        if (session->in_channel) {
+            if (is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)) {
+                if (is_member(socket, session->current_channel, username)) {
+                    kick_user(socket, session->current_channel, username);
+                } else {
+                    write(socket, "User tidak ditemukan", strlen("User tidak ditemukan"));
+                }
+            } else {
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
+        } else {
+            write(socket, "Anda tidak berada dalam channel", strlen("Anda tidak berada dalam channel"));
+        }
+````
+#### REMOVE menghapus user dari sistem, jika user saat ini adalah root dan user target bukan root.
+````
+    } else if (sscanf(buffer, "REMOVE %s", username) == 1) {
+        if (is_root(socket, session->username)) {
+            if (is_root(socket, username)) {
+                write(socket, "Tidak bisa hapus root", strlen("Tidak bisa hapus root"));
+            } else {
+                remove_user(socket, username);
+            }
+        } else {
+            write(socket, "Akses ditolak", strlen("Akses ditolak"));
+        }
+````
+#### BAN USER membanned user dari channel saat ini, jika user saat ini adalah admin atau root dan user target bukan anggota, admin, atau root.
+````
+    } else if (sscanf(buffer, "BAN %s", target_username) == 1){
+        if(session->in_channel){
+            if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                if(is_member(socket, session->current_channel, target_username)){
+                    if(is_banned(socket, session->current_channel, target_username)){
+                        write(socket, "User sudah dibanned", strlen("User sudah dibanned"));
+                    }else if(is_admin(socket, session->current_channel, target_username)){
+                        write(socket, "Tidak bisa ban admin", strlen("Tidak bisa ban admin"));
+                    }else if(is_root(socket, target_username)){
+                        write(socket, "Tidak bisa ban root", strlen("Tidak bisa ban root"));
+                    }else if(strcmp(target_username, session->username) == 0){
+                        write(socket, "Tidak bisa ban diri sendiri", strlen("Tidak bisa ban diri sendiri"));
+                    }else{
+                        ban_user(socket, session->current_channel, target_username);
+                    }
+                }else{
+                    write(socket, "User tidak ditemukan", strlen("User tidak ditemukan"));
+                }
+            }else{
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+````
+#### UNBAM USER menghapus banned user dari channel saat ini, jika user saat ini adalah admin atau root dan user target telah dibanned.
+````
+    } else if (sscanf(buffer, "UNBAN %s", target_username) == 1){
+        if(session->in_channel){
+            if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                if(is_member(socket, session->current_channel, target_username)){
+                    if(is_banned(socket, session->current_channel, target_username)){
+                        unban_user(socket, session->current_channel, target_username);
+                    }else{
+                        write(socket, "User tidak dibanned", strlen("User tidak dibanned"));
+                    }
+                }else{
+                    write(socket, "User tidak ditemukan", strlen("User tidak ditemukan"));
+                }
+            }else{
+                write(socket, "Akses ditolak", strlen("Akses ditolak"));
+            }
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+````
+#### CHAT mengirim pesan dalam room saat ini, jika user berada dalam channel dan room. Pesan harus di dalam tanda kutip ganda.
+````
+    } else if (strncmp(buffer, "CHAT ", 5) == 0) {
+        char *message_start = buffer + 5;  // Skip "CHAT " (5 characters)
+        size_t message_length = strlen(message_start);
+        
+        if (message_length >= 2 && message_start[0] == '"' && message_start[message_length - 1] == '"') {
+            // Extract message within quotes
+            message_start++;  // Skip opening quote
+            message_length -= 2;  // Remove both quotes from length
+            
+            size_t max_length = sizeof(message) - 1;  // Assume 'message' is an array
+            strncpy(message, message_start, message_length < max_length ? message_length : max_length);
+            message[message_length < max_length ? message_length : max_length] = '\0';  // Ensure null-termination
+            
+            if(session->in_channel){
+                if(session->in_room){
+                    chat(socket, session->current_channel, session->current_room, session->username, message);
+                }else{
+                    write(socket, "Anda belum bergabung ke room", strlen("Anda belum bergabung ke room"));
+                }
+            }else{
+                write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+            }
+        } else {
+            write(socket, "Format pesan tidak valid. Pesan harus diawali dan diakhiri dengan tanda kutip ganda (\").", 
+                strlen("Format pesan tidak valid. Pesan harus diawali dan diakhiri dengan tanda kutip ganda (\")."));
+        }
+````
+#### EDIT CHAT mengubah pesan dalam room saat ini, jika user berada dalam channel dan room serta user adalah admin, root, atau pemilik pesan.
+````
+    } else if (sscanf(buffer, "EDIT CHAT %d \"%[^\"]\"", &id_chat, message) == 2) {
+        if(session->in_channel){
+            if(session->in_room){
+                if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                    edit_chat(socket, session->current_channel, session->current_room, session->username, id_chat, message);
+                }else{
+                    if(my_message(socket, session->current_channel, session->current_room, session->username, id_chat)){
+                        edit_chat(socket, session->current_channel, session->current_room, session->username, id_chat, message);
+                    }else{
+                        write(socket, "Anda tidak bisa edit chat orang lain", strlen("Anda tidak bisa edit chat orang lain"));
+                    }
+                }
+            }else{
+                write(socket, "Anda belum bergabung ke room", strlen("Anda belum bergabung ke room"));
+            }
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+````
+#### DELETE CHAT menghapus pesan dalam room saat ini, jika user berada dalam channel dan room serta user adalah admin, root, atau pemilik pesan.
+````
+    } else if (sscanf(buffer, "DEL CHAT %d", &id_chat) == 1) {
+        if(session->in_channel){
+            if(session->in_room){
+                if(is_admin(socket, session->current_channel, session->username) || is_root(socket, session->username)){
+                    delete_chat(socket, session->current_channel, session->current_room, id_chat);
+                }else{
+                    if(my_message(socket, session->current_channel, session->current_room, session->username, id_chat)){
+                        delete_chat(socket, session->current_channel, session->current_room, id_chat);
+                    }else{
+                        write(socket, "Anda tidak bisa hapus chat orang lain", strlen("Anda tidak bisa hapus chat orang lain"));
+                    }
+                }
+            }else{
+                write(socket, "Anda belum bergabung ke room", strlen("Anda belum bergabung ke room"));
+            }
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+````
+#### SEE CHAT menampilkan pesan dalam room saat ini, jika user berada dalam channel dan room.
+````
+    } else if (strcmp(buffer, "SEE CHAT") == 0) {
+        if(session->in_channel){
+            if(session->in_room){
+                see_chat(socket, session->current_channel, session->current_room);
+            }else{
+                write(socket, "Anda belum bergabung ke room", strlen("Anda belum bergabung ke room"));
+            }
+        }else{
+            write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+        }
+    } else if (sscanf(buffer, "-channel %s -room %s", channel_name, room_name) == 2) {
+        //write(socket, "%d", monitor_session->logged_in);
+        if(!monitor_session->logged_in){
+            if (channel_exists(socket, channel_name)) {
+                if (room_exists(socket, channel_name, room_name)) {
+                    if(is_member(socket, channel_name, session->username) || is_root(socket, session->username) || is_admin(socket, channel_name, session->username)){
+                        send_message_to_monitor(session, buffer);
+                    } else {
+                        write(socket, "Anda belum bergabung ke channel", strlen("Anda belum bergabung ke channel"));
+                    }
+                    write(socket, "Pesan terkirim", strlen("Pesan terkirim"));
+                } else {
+                    write(socket, "Room tidak ditemukan", strlen("Room tidak ditemukan"));
+                }
+            } else {
+                write(socket, "Channel tidak ditemukan", strlen("Channel tidak ditemukan"));
+            }
+        } else {
+            write(socket, "Monitor harus login terlebih dahulu", strlen("Monitor harus login terlebih dahulu"));
+        }
+````
+#### EXIT, user akan keluar dari room dan channel saat ini, log exit akan dicatat, dan user akan keluar dari sistem.
+````
+    } else if (strcmp(buffer, "EXIT") == 0) {
+        if (session->in_room) {
+            char line[BUF_SIZE];
+            sprintf(line, "%s keluar dari room %s", session->username, session->current_room);
+            log_action(session->current_channel, line);
+            write(socket, "Keluar Room", strlen("Keluar Room"));
+            session->in_room = 0;
+            memset(session->current_room, 0, sizeof(session->current_room));
+        } else if (session->in_channel) {
+            char line[BUF_SIZE];
+            sprintf(line, "%s keluar dari channel %s", session->username, session->current_channel);
+            log_action(session->current_channel, line);
+            write(socket, "Keluar Channel", strlen("Keluar Channel"));
+            session->in_channel = 0;
+            memset(session->current_channel, 0, sizeof(session->current_channel));
+        } else {
+            send_message_to_monitor(session, buffer);
+            logout_user(session);
+            close(socket);
+            pthread_exit(0);
+        }
+````
+#### Jika perintah tidak dikenali, pesan "Perintah tidak valid" akan dikirim ke user.
+````    
+    } else {
+        write(socket, "Perintah tidak valid", strlen("Perintah tidak valid"));
+    }
+}
+````
