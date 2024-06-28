@@ -716,4 +716,182 @@ Close File Descriptors:
 
 Fungsi ini memastikan bahwa daemon tidak terkait dengan terminal dan dapat berjalan di latar belakang tanpa interaksi langsung dari pengguna.
 
-### 7. Fungsi main
+### 7. Fungsi `main`
+````
+int main() {
+    daemonize();
+
+    int server_fd, new_socket;
+    struct sockaddr_in address;
+    int addrlen = sizeof(address);
+    
+    if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+        perror("socket failed");
+        exit(EXIT_FAILURE);
+    }
+
+    if(setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
+        perror("setsockopt(SO_REUSEADDR) failed");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    if(setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0) {
+        perror("setsockopt(SO_REUSEPORT) failed");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = INADDR_ANY;
+    address.sin_port = htons(PORT);
+    
+    if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+        perror("bind failed");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+    if (listen(server_fd, 3) < 0) {
+        perror("listen");
+        close(server_fd);
+        exit(EXIT_FAILURE);
+    }
+    
+    while (1) {
+        if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+            perror("accept");
+            continue;
+        }
+        pthread_t thread_id;
+        pthread_create(&thread_id, NULL, handle_client, (void *)&new_socket);
+    }
+
+    return 0;
+}
+````
+#### Daemonisasi:
+````
+daemonize();
+````
+Memanggil fungsi daemonize untuk membuat proses menjadi daemon.
+
+#### Membuat Socket:
+````
+if ((server_fd = socket(AF_INET, SOCK_STREAM, 0)) == 0) {
+    perror("socket failed");
+    exit(EXIT_FAILURE);
+}
+````
+Membuat socket file descriptor untuk komunikasi TCP.
+
+#### Mengatur Opsi Socket:
+````
+if(setsockopt(server_fd, SOL_SOCKET, SO_REUSEADDR, &(int){1}, sizeof(int)) < 0) {
+    perror("setsockopt(SO_REUSEADDR) failed");
+    close(server_fd);
+    exit(EXIT_FAILURE);
+}
+if(setsockopt(server_fd, SOL_SOCKET, SO_REUSEPORT, &(int){1}, sizeof(int)) < 0) {
+    perror("setsockopt(SO_REUSEPORT) failed");
+    close(server_fd);
+    exit(EXIT_FAILURE);
+}
+````
+Mengatur opsi socket untuk memungkinkan penggunaan kembali alamat dan port.
+
+#### Binding:
+````
+address.sin_family = AF_INET;
+address.sin_addr.s_addr = INADDR_ANY;
+address.sin_port = htons(PORT);
+
+if (bind(server_fd, (struct sockaddr *)&address, sizeof(address)) < 0) {
+    perror("bind failed");
+    close(server_fd);
+    exit(EXIT_FAILURE);
+}
+````
+Mengaitkan socket ke alamat dan port tertentu.
+
+#### Mendengarkan Koneksi:
+````
+if (listen(server_fd, 3) < 0) {
+    perror("listen");
+    close(server_fd);
+    exit(EXIT_FAILURE);
+}
+````
+Menempatkan socket dalam mode mendengarkan untuk menerima koneksi masuk.
+
+#### Menerima dan Menangani Koneksi Klien:
+````
+while (1) {
+    if ((new_socket = accept(server_fd, (struct sockaddr *)&address, (socklen_t*)&addrlen)) < 0) {
+        perror("accept");
+        continue;
+    }
+    pthread_t thread_id;
+    pthread_create(&thread_id, NULL, handle_client, (void *)&new_socket);
+}
+````
+Menerima koneksi masuk dan membuat thread baru untuk menangani setiap klien menggunakan fungsi handle_client.
+
+### 8. Fungsi `send_to_monitor`
+````
+void send_to_monitor(const char *message) {
+    for (int i = 0; i < client_count; i++) {
+        if (clients[i].socket != 0 && clients[i].is_monitor) {
+            send(clients[i].socket, message, strlen(message), 0);
+        }
+    }
+}
+````
+Penjelasan:
+Fungsi ini mengirim pesan ke semua klien yang bertindak sebagai monitor.
+Iterasi melalui semua klien dan mengirim pesan jika klien adalah monitor.
+
+### 9. Fungsi find_monitor_client
+````
+int find_monitor_client(const char *username) {
+    for (int i = 0; i < MAX_CLIENTS; i++) {
+        if (clients[i].socket != 0 && clients[i].is_monitor && strcmp(clients[i].username, username) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+````
+Penjelasan:
+Fungsi ini mencari klien monitor berdasarkan nama pengguna.
+Mengembalikan indeks klien jika ditemukan, atau -1 jika tidak ditemukan.
+
+### 10. Fungsi send_message_to_monitor
+````
+void send_message_to_monitor(Session *session, const char *message) {
+    int monitor_index = find_monitor_client(session->username);
+    if (monitor_index != -1) {
+        send(clients[monitor_index].socket, message, strlen(message), 0);
+    }
+}
+````
+Penjelasan:
+Fungsi ini mengirim pesan ke klien monitor yang sesuai dengan nama pengguna dalam sesi.
+Menggunakan find_monitor_client untuk menemukan klien dan mengirim pesan jika ditemukan.
+
+### 11. Fungsi close_monitor_sessions
+````
+void close_monitor_sessions() {
+    for (int i = 0; i < client_count; i++) {
+        if (clients[i].socket != 0 && clients[i].is_monitor) {
+            close(clients[i].socket);
+            clients[i].socket = 0;
+            clients[i].is_monitor = false;
+            client_count--;
+        }
+    }
+}
+````
+Penjelasan:
+Fungsi ini menutup semua sesi klien yang bertindak sebagai monitor.
+Iterasi melalui semua klien, menutup socket klien yang adalah monitor, dan mengatur ulang status klien.
+
