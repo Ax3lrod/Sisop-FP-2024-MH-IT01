@@ -517,9 +517,9 @@ int remove_directory(const char *path) {
     size_t path_len = strlen(path);
     int r = -1;
 ````
-DIR *d = opendir(path);: Membuka direktori yang path-nya diberikan sebagai argumen dan mengembalikan pointer ke struktur direktori.
-size_t path_len = strlen(path);: Menghitung panjang string dari path direktori.
-int r = -1;: Inisialisasi variabel r dengan nilai -1, yang menunjukkan kegagalan operasi jika tidak berubah.
+- DIR *d = opendir(path);: Membuka direktori yang path-nya diberikan sebagai argumen dan mengembalikan pointer ke struktur direktori.
+- size_t path_len = strlen(path);: Menghitung panjang string dari path direktori.
+- int r = -1;: Inisialisasi variabel r dengan nilai -1, yang menunjukkan kegagalan operasi jika tidak berubah.
 
 #### Pemeriksaan Direktori
 ````
@@ -538,10 +538,10 @@ Jika direktori berhasil dibuka (d tidak NULL), inisialisasi variabel p dari tipe
         size_t len;
 
 ````
-while (!r && (p = readdir(d))): Iterasi melalui setiap entri dalam direktori selama r tetap 0 dan masih ada entri yang bisa dibaca.
-int r2 = -1;: Inisialisasi variabel r2 dengan -1 untuk memeriksa hasil penghapusan entri.
-char *buf;: Pointer untuk menyimpan path lengkap dari entri yang sedang diproses.
-size_t len;: Menyimpan panjang dari path lengkap.
+- while (!r && (p = readdir(d))): Iterasi melalui setiap entri dalam direktori selama r tetap 0 dan masih ada entri yang bisa dibaca.
+- int r2 = -1;: Inisialisasi variabel r2 dengan -1 untuk memeriksa hasil penghapusan entri.
+- char *buf;: Pointer untuk menyimpan path lengkap dari entri yang sedang diproses.
+- size_t len;: Menyimpan panjang dari path lengkap.
 
 #### Melewati Entri Khusus
 ````
@@ -572,14 +572,14 @@ len = path_len + strlen(p->d_name) + 2;
     }
     closedir(d);
 ````
-len = path_len + strlen(p->d_name) + 2;: Menghitung panjang buffer yang diperlukan untuk path lengkap.
-buf = malloc(len);: Mengalokasikan memori untuk buffer.
-snprintf(buf, len, "%s/%s", path, p->d_name);: Menggabungkan path direktori dengan nama entri untuk membentuk path lengkap.
-stat(buf, &statbuf): Mendapatkan informasi status dari entri.
-if (S_ISDIR(statbuf.st_mode)): Jika entri adalah direktori, panggil remove_directory secara rekursif.
-else unlink(buf);: Jika entri adalah file, hapus file tersebut.
-free(buf);: Membebaskan memori yang dialokasikan untuk buffer.
-r = r2;: Set nilai r ke hasil dari operasi penghapusan entri.
+- len = path_len + strlen(p->d_name) + 2;: Menghitung panjang buffer yang diperlukan untuk path lengkap.
+- buf = malloc(len);: Mengalokasikan memori untuk buffer.
+- snprintf(buf, len, "%s/%s", path, p->d_name);: Menggabungkan path direktori dengan nama entri untuk membentuk path lengkap.
+- stat(buf, &statbuf): Mendapatkan informasi status dari entri.
+- if (S_ISDIR(statbuf.st_mode)): Jika entri adalah direktori, panggil remove_directory secara rekursif.
+- else unlink(buf);: Jika entri adalah file, hapus file tersebut.
+- free(buf);: Membebaskan memori yang dialokasikan untuk buffer.
+- r = r2;: Set nilai r ke hasil dari operasi penghapusan entri.
 
 #### Menutup Direktori dan Menghapus Direktori
 ````
@@ -629,13 +629,13 @@ void log_action(const char *channel_name, const char *event) {
 ````
 Fungsi ini mencatat sebuah aksi ke file log (user.log) yang terletak di dalam folder admin pada direktori saluran tertentu.
 
-char log_file_path[BUF_SIZE];: Buffer untuk path file log.
-snprintf(log_file_path, sizeof(log_file_path), "%s/%s/admin/user.log", DISCORIT_DIR, channel_name);: Menggabungkan direktori dan nama saluran untuk membuat path lengkap ke file log.
-FILE *log_file = fopen(log_file_path, "a");: Membuka file log dalam mode append. Jika gagal, menampilkan pesan error dan keluar dari fungsi.
-char timestamp[BUF_SIZE];: Buffer untuk menyimpan timestamp.
-get_timestamp(timestamp, sizeof(timestamp));: Mendapatkan timestamp saat ini.
-fprintf(log_file, "%s %s\n", timestamp, event);: Menulis timestamp dan event ke file log.
-fclose(log_file);: Menutup file log.
+- char log_file_path[BUF_SIZE];: Buffer untuk path file log.
+- snprintf(log_file_path, sizeof(log_file_path), "%s/%s/admin/user.log", DISCORIT_DIR, channel_name);: Menggabungkan direktori dan nama saluran untuk membuat path lengkap ke file log.
+- FILE *log_file = fopen(log_file_path, "a");: Membuka file log dalam mode append. Jika gagal, menampilkan pesan error dan keluar dari fungsi.
+- char timestamp[BUF_SIZE];: Buffer untuk menyimpan timestamp.
+- get_timestamp(timestamp, sizeof(timestamp));: Mendapatkan timestamp saat ini.
+- fprintf(log_file, "%s %s\n", timestamp, event);: Menulis timestamp dan event ke file log.
+- fclose(log_file);: Menutup file log.
 
 ### 6. Fungsi daemonize
 ````
@@ -686,33 +686,33 @@ void daemonize() {
 Fungsi ini mengubah proses yang sedang berjalan menjadi daemon, yaitu sebuah proses yang berjalan di latar belakang tanpa kontrol terminal.
 
 Fork the Parent Process:
-pid = fork();: Membuat proses anak.
-Jika fork gagal (pid < 0), menampilkan pesan error dan keluar.
-Jika pid > 0, ini adalah proses induk yang keluar dengan status sukses.
+- pid = fork();: Membuat proses anak.
+- Jika fork gagal (pid < 0), menampilkan pesan error dan keluar.
+- Jika pid > 0, ini adalah proses induk yang keluar dengan status sukses.
 
 Set Session Leader:
-if (setsid() < 0): Proses anak menjadi pemimpin sesi baru.
-Jika setsid gagal, menampilkan pesan error dan keluar.
+- if (setsid() < 0): Proses anak menjadi pemimpin sesi baru.
+- Jika setsid gagal, menampilkan pesan error dan keluar.
 
 Ignore SIGCHLD:
-signal(SIGCHLD, SIG_IGN);: Mengabaikan sinyal dari proses anak yang berakhir.
+- signal(SIGCHLD, SIG_IGN);: Mengabaikan sinyal dari proses anak yang berakhir.
 
 Fork Again:
-pid = fork();: Membuat proses anak kedua.
-Jika fork gagal, menampilkan pesan error dan keluar.
-Jika pid > 0, proses induk kedua keluar dengan status sukses.
+- pid = fork();: Membuat proses anak kedua.
+- Jika fork gagal, menampilkan pesan error dan keluar.
+- Jika pid > 0, proses induk kedua keluar dengan status sukses.
 
 Set File Permissions:
-umask(0);: Mengatur mode file mask untuk memastikan file yang dibuat memiliki izin yang tepat.
+- umask(0);: Mengatur mode file mask untuk memastikan file yang dibuat memiliki izin yang tepat.
 
 Change Working Directory:
-if (chdir("/") < 0): Mengubah direktori kerja ke root untuk memastikan proses daemon tidak mengunci direktori yang sedang berjalan.
-Jika chdir gagal, menampilkan pesan error dan keluar.
+- if (chdir("/") < 0): Mengubah direktori kerja ke root untuk memastikan proses daemon tidak mengunci direktori yang sedang berjalan.
+- Jika chdir gagal, menampilkan pesan error dan keluar.
 
 Close File Descriptors:
-open("/dev/null", O_RDWR);: Membuka /dev/null untuk input/output standar.
-dup(0);: Menyalin file descriptor stdin ke stdout.
-dup(0);: Menyalin file descriptor stdin ke stderr.
+- open("/dev/null", O_RDWR);: Membuka /dev/null untuk input/output standar.
+- dup(0);: Menyalin file descriptor stdin ke stdout.
+- dup(0);: Menyalin file descriptor stdin ke stderr.
 
 Fungsi ini memastikan bahwa daemon tidak terkait dengan terminal dan dapat berjalan di latar belakang tanpa interaksi langsung dari pengguna.
 
