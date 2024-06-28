@@ -865,7 +865,7 @@ Penjelasan:
 Fungsi ini mencari klien monitor berdasarkan nama pengguna.
 Mengembalikan indeks klien jika ditemukan, atau -1 jika tidak ditemukan.
 
-### 10. Fungsi send_message_to_monitor`
+### 10. Fungsi `send_message_to_monitor`
 ````
 void send_message_to_monitor(Session *session, const char *message) {
     int monitor_index = find_monitor_client(session->username);
@@ -1020,3 +1020,325 @@ Menutup Koneksi Klien:
 - Jika koneksi klien terputus, socket ditutup dan status klien dalam daftar clients direset.
 - Jika klien sudah login, memanggil logout_user untuk keluar dari sesi.
 - Mengurangi jumlah klien yang terhubung (client_count).
+
+### 14. Fungsi `register_user`
+````
+int register_user(const char *username, const char *password) {
+    FILE *file = fopen(USER_FILE, "r");
+    int max_id = 0;
+
+    if (file) {
+        char line[BUF_SIZE];
+        while (fgets(line, sizeof(line), file)) {
+            int id;
+            char stored_username[BUF_SIZE];
+            if (sscanf(line, "%d,%[^,]", &id, stored_username) == 2) {
+                if (strcmp(stored_username, username) == 0) {
+                    fclose(file);
+                    return 0; // Username already exists
+                }
+                if (id > max_id) {
+                    max_id = id;
+                }
+            }
+        }
+        fclose(file);
+    }
+
+    file = fopen(USER_FILE, "a");
+    if (!file) {
+        perror("fopen");
+        return 0;
+    }
+
+    int new_id = max_id + 1;
+    char *encrypted_password = bcrypt(password);
+    fprintf(file, "%d,%s,%s,%s\n", new_id, username, encrypted_password, new_id == 1 ? "ROOT" : "USER");
+    free(encrypted_password);
+    fclose(file);
+    return 1;
+}
+````
+Penjelasan:
+Membaca File Pengguna:
+
+Membuka file USER_FILE untuk membaca.
+Memeriksa apakah username sudah ada di file.
+Menentukan max_id untuk ID pengguna baru.
+Menambahkan Pengguna Baru:
+
+Jika username belum ada, membuka file USER_FILE dalam mode append.
+Mengenkripsi password menggunakan bcrypt.
+Menulis informasi pengguna baru ke dalam file.
+Menutup file dan mengembalikan nilai 1 yang menunjukkan registrasi berhasil.
+
+### 15. Fungsi `login_user`
+````
+int login_user(const char *username, const char *password, Session *session, int is_monitor) {
+    FILE *file = fopen(USER_FILE, "r");
+    if (!file) {
+        perror("fopen");
+        return 0;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], stored_password[BUF_SIZE], role[BUF_SIZE];
+        int num_fields = sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, stored_password, role);
+
+        if (num_fields < 4) {
+            printf("Malformed line: %s\n", line);
+            continue;
+        }
+
+        if (strcmp(stored_username, username) == 0) {
+            if ((is_monitor && logged_in_users[id].monitor) || (!is_monitor && logged_in_users[id].regular)) {
+                fclose(file);
+                return -1; // User already logged in for this type of session
+            }
+            if (strcmp(crypt(password, stored_password), stored_password) == 0) {
+                session->logged_in = 1;
+                strncpy(session->username, username, BUF_SIZE);
+                strncpy(session->role, role, BUF_SIZE);
+                session->user_id = id;
+                session->is_monitor = is_monitor;
+                if (is_monitor) {
+                    logged_in_users[id].monitor = 1;
+                } else {
+                    logged_in_users[id].regular = 1;
+                }
+                fclose(file);
+                printf("User %s logged in %s\n", username, is_monitor ? "as monitor" : ""); // Debugging
+                return 1;
+            }
+            break;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+````
+Penjelasan:
+Membaca File Pengguna:
+
+Membuka file USER_FILE untuk membaca.
+Memeriksa apakah username ada di file.
+Memeriksa Status Login dan Password:
+
+Memeriksa apakah pengguna sudah login.
+Membandingkan password yang dienkripsi.
+Jika cocok, memperbarui sesi pengguna dengan informasi login.
+Menutup file dan mengembalikan nilai 1 untuk menunjukkan login berhasil.
+
+### 16. Fungsi `logout_user`
+````
+void logout_user(Session *session) {
+    if (session->logged_in) {
+        if (session->is_monitor) {
+            logged_in_users[session->user_id].monitor = 0;
+        } else {
+            logged_in_users[session->user_id].regular = 0;
+        }
+        session->logged_in = 0;
+        memset(session->username, 0, BUF_SIZE);
+        memset(session->role, 0, BUF_SIZE);
+        session->user_id = 0;
+        session->is_monitor = 0;
+    }
+}
+````
+Penjelasan:
+Logout Pengguna:
+Memeriksa apakah sesi pengguna sedang login.
+Mengubah status login dalam daftar logged_in_users berdasarkan tipe sesi (monitor atau regular).
+Mengatur ulang informasi sesi pengguna menjadi nol atau kosong.
+
+### 17. Fungsi `logout_monitor`
+````
+void logout_monitor(monitorSession *monitor_session) {
+    if (monitor_session->logged_in) {
+        monitor_session->logged_in = 0;
+    }
+}
+````
+Penjelasan:
+Logout Monitor:
+Memeriksa apakah sesi monitor sedang login.
+Mengubah status login monitor menjadi tidak login (0).
+
+
+### 18. Fungsi `login_monitor`
+````
+int login_monitor(const char *username, const char *password, monitorSession *session) {
+    FILE *file = fopen(USER_FILE, "r");
+    if (!file) {
+        perror("fopen");
+        return 0;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], stored_password[BUF_SIZE], role[BUF_SIZE];
+        int num_fields = sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, stored_password, role);
+
+        if (num_fields < 4) {
+            printf("Malformed line: %s\n", line);
+            continue;
+        }
+
+        if (strcmp(stored_username, username) == 0) {
+            if (strcmp(crypt(password, stored_password), stored_password) == 0) {
+                session->logged_in = 1;
+                fclose(file);
+                printf("User %s logged in as monitor\n", username); // Debugging
+                return 1;
+            }
+            break;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+````
+Fungsi ini bertujuan untuk memeriksa kredensial login pengguna dan mengatur sesi login jika pengguna berhasil masuk sebagai monitor.
+
+Parameter:
+- username: Nama pengguna yang mencoba login.
+- password: Kata sandi yang diberikan oleh pengguna.
+- session: Pointer ke struktur sesi yang digunakan untuk mencatat status login.
+
+Proses:
+- Membuka file pengguna (USER_FILE) dalam mode baca. Jika gagal, mencetak pesan kesalahan dan mengembalikan 0. -
+- Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, stored_username, stored_password, role).
+- Jika baris tidak terformat dengan benar (kurang dari 4 bidang), mencetak pesan kesalahan dan melanjutkan ke baris berikutnya.
+- Membandingkan stored_username dengan username yang diberikan.
+- Jika cocok, membandingkan kata sandi yang di-hash menggunakan fungsi crypt dengan stored_password.
+- Jika kata sandi cocok, mengatur status login dalam session dan menutup file, lalu mengembalikan 1.
+- Jika tidak cocok, menutup file dan mengembalikan 0.
+
+### 19. Fungsi `bool is_admin`
+````
+bool is_admin(int socket, const char *channel_name, const char *username) {
+    char admin_dir_path[BUF_SIZE];
+    snprintf(admin_dir_path, sizeof(admin_dir_path), "%s/%s/admin", DISCORIT_DIR, channel_name);
+
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/auth.csv", admin_dir_path);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    if (!auth_file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0 && strcmp(role, "ADMIN") == 0) {
+            fclose(auth_file);
+            return 1;
+        }
+    }
+
+    fclose(auth_file);
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah seorang pengguna adalah admin pada suatu channel tertentu.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel yang diperiksa.
+username: Nama pengguna yang diperiksa.
+
+Proses:
+Mengatur jalur direktori admin berdasarkan DISCORIT_DIR dan channel_name.
+Membuka file autentikasi (auth.csv) dalam direktori tersebut.
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, stored_username, role).
+Jika stored_username cocok dengan username dan role adalah "ADMIN", menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### 20. Fungsi `bool is_root`    
+````
+bool is_root(int socket, const char *username) {
+    FILE *file = fopen(USER_FILE, "r");
+    if (!file) {
+        perror("fopen");
+        return false;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE], password[BUF_SIZE];
+        if (sscanf(line, "%d,%[^,],%[^,],%s", &id, stored_username, password, role) == 4) {
+            if (strcmp(stored_username, username) == 0 && strcmp(role, "ROOT") == 0) {
+                fclose(file);
+                return true;
+            }
+        }
+    }
+
+    fclose(file);
+    return false;
+}
+````
+Fungsi ini memeriksa apakah seorang pengguna adalah root (superuser) dalam sistem.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+username: Nama pengguna yang diperiksa.
+
+Proses:
+Membuka file pengguna (USER_FILE) dalam mode baca.
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, stored_username, password, role).
+Jika stored_username cocok dengan username dan role adalah "ROOT", menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### 21. Fungsi `bool is_member`
+````
+bool is_member(int socket, const char *channel_name, const char *username) {
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel_name);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    if (!auth_file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0) {
+            fclose(auth_file);
+            return 1;
+        }
+    }
+
+    fclose(auth_file);
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah seorang pengguna adalah anggota dari suatu channel tertentu.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel yang diperiksa.
+username: Nama pengguna yang diperiksa.
+
+Proses:
+Mengatur jalur direktori autentikasi berdasarkan DISCORIT_DIR dan channel_name.
+Membuka file autentikasi (auth.csv) dalam direktori tersebut.
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, stored_username, role).
+Jika stored_username cocok dengan username, menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
+
