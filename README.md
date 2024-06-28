@@ -1342,3 +1342,148 @@ Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (i
 Jika stored_username cocok dengan username, menutup file dan mengembalikan true.
 Jika tidak ditemukan, menutup file dan mengembalikan false.
 
+### 22. Fungsi `bool validate_key`
+````
+bool validate_key(int socket, const char *channel_name, const char *key) {
+    FILE *file = fopen(CHANNEL_FILE, "r");
+    if (!file) {
+        perror("fopen");
+        return false;  // Changed from 'return;' to 'return false;'
+    }
+
+    // Trim newline from key if present
+    char trimmed_key[BUF_SIZE];
+    strncpy(trimmed_key, key, BUF_SIZE - 1);
+    trimmed_key[BUF_SIZE - 1] = '\0';  // Ensure null-termination
+    char *newline = strchr(trimmed_key, '\n');
+    if (newline) *newline = '\0';
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        char stored_channel[BUF_SIZE], stored_key[BUF_SIZE];
+        sscanf(line, "%*d,%[^,],%s", stored_channel, stored_key);
+        if (strcmp(stored_channel, channel_name) == 0 && strcmp(crypt(trimmed_key, stored_key), stored_key) == 0) {
+            fclose(file);
+            return true;
+        }
+    }
+
+    fclose(file);
+    return false;
+}
+````
+Fungsi ini memeriksa apakah kunci yang diberikan valid untuk suatu channel.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel yang diperiksa.
+key: Kunci yang diberikan untuk divalidasi.
+
+Proses:
+Membuka file channel (CHANNEL_FILE) dalam mode baca. Jika gagal, mencetak pesan kesalahan dan mengembalikan false.
+Memangkas newline dari kunci jika ada.
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (stored_channel, stored_key).
+Jika stored_channel cocok dengan channel_name dan kunci yang di-hash cocok dengan stored_key, menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### 23. Fungsi `bool channel_exists`
+````
+bool channel_exists(int socket, const char *channel_name) {
+    FILE *file = fopen(CHANNEL_FILE, "r");
+    if (!file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), file)) {
+        char stored_channel[BUF_SIZE];
+        sscanf(line, "%*d,%[^,],%*s", stored_channel);
+        if (strcmp(stored_channel, channel_name) == 0) {
+            fclose(file);
+            return 1;
+        }
+    }
+
+    fclose(file);
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah suatu channel ada.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel yang diperiksa.
+
+Proses:
+Membuka file channel (CHANNEL_FILE) dalam mode baca. Jika gagal, mencetak pesan kesalahan dan mengembalikan false.
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (stored_channel).
+Jika stored_channel cocok dengan channel_name, menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
+
+### 24. Fungsi `bool room_exists`
+````
+bool room_exists(int socket, const char *channel_name, const char *room_name) {
+    char room_dir_path[BUF_SIZE];
+    snprintf(room_dir_path, sizeof(room_dir_path), "%s/%s/%s", DISCORIT_DIR, channel_name, room_name);
+
+    struct stat st;
+    if (stat(room_dir_path, &st) == 0) {
+        return 1;
+    }
+
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah suatu room ada dalam channel tertentu.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel yang diperiksa.
+room_name: Nama room yang diperiksa.
+
+Proses:
+Menyusun jalur direktori room berdasarkan DISCORIT_DIR, channel_name, dan room_name.
+Memeriksa apakah jalur tersebut ada menggunakan fungsi stat.
+Jika jalur ada, mengembalikan true, jika tidak, mengembalikan false.
+
+### 25. Fungsi `bool is_banned`
+````
+bool is_banned(int socket, const char *channel_name, const char *username) {
+    char auth_dir_path[BUF_SIZE];
+    snprintf(auth_dir_path, sizeof(auth_dir_path), "%s/%s/admin/auth.csv", DISCORIT_DIR, channel_name);
+
+    FILE *auth_file = fopen(auth_dir_path, "r");
+    if (!auth_file) {
+        perror("fopen");
+        return;
+    }
+
+    char line[BUF_SIZE];
+    while (fgets(line, sizeof(line), auth_file)) {
+        int id;
+        char stored_username[BUF_SIZE], role[BUF_SIZE];
+        sscanf(line, "%d,%[^,],%s", &id, stored_username, role);
+        if (strcmp(stored_username, username) == 0 && strcmp(role, "BANNED") == 0) {
+            fclose(auth_file);
+            return 1;
+        }
+    }
+
+    fclose(auth_file);
+    return 0;
+}
+````
+Fungsi ini memeriksa apakah seorang pengguna dilarang (banned) dalam channel tertentu.
+
+Parameter:
+socket: Soket yang digunakan untuk komunikasi (tidak digunakan dalam implementasi ini).
+channel_name: Nama channel yang diperiksa.
+username: Nama pengguna yang diperiksa.
+
+Proses:
+Menyusun jalur direktori autentikasi berdasarkan DISCORIT_DIR dan channel_name.
+Membuka file autentikasi (auth.csv) dalam direktori tersebut.
+Membaca setiap baris dari file dan memparsingnya menjadi variabel yang sesuai (id, stored_username, role).
+Jika stored_username cocok dengan username dan role adalah "BANNED", menutup file dan mengembalikan true.
+Jika tidak ditemukan, menutup file dan mengembalikan false.
